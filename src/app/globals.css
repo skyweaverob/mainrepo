@@ -1,8 +1,26 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #0f172a;
+  --foreground: #f8fafc;
+  --card: #1e293b;
+  --card-foreground: #f8fafc;
+  --primary: #3b82f6;
+  --primary-foreground: #ffffff;
+  --secondary: #334155;
+  --secondary-foreground: #f8fafc;
+  --muted: #334155;
+  --muted-foreground: #94a3b8;
+  --accent: #1e293b;
+  --accent-foreground: #f8fafc;
+  --border: #334155;
+
+  /* Segment colors - sacred palette from spec */
+  --segment-vfr: #3b82f6;
+  --segment-leisure: #22c55e;
+  --segment-cruise: #f97316;
+  --segment-business: #6b7280;
+  --segment-other: #8b5cf6;
 }
 
 @theme inline {
@@ -12,15 +30,57 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), system-ui, sans-serif;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--card);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--secondary);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted-foreground);
+}
+
+/* Segment color utilities */
+.segment-vfr { color: var(--segment-vfr); }
+.segment-leisure { color: var(--segment-leisure); }
+.segment-cruise { color: var(--segment-cruise); }
+.segment-business { color: var(--segment-business); }
+.segment-other { color: var(--segment-other); }
+
+.bg-segment-vfr { background-color: var(--segment-vfr); }
+.bg-segment-leisure { background-color: var(--segment-leisure); }
+.bg-segment-cruise { background-color: var(--segment-cruise); }
+.bg-segment-business { background-color: var(--segment-business); }
+.bg-segment-other { background-color: var(--segment-other); }
+
+/* Card styles */
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+}
+
+/* Animation */
+@keyframes pulse-subtle {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.animate-pulse-subtle {
+  animation: pulse-subtle 2s ease-in-out infinite;
 }
