@@ -1,6 +1,11 @@
 // API client for SkyWeave backend
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-9693.up.railway.app';
+
+// Log the API base URL in development
+if (typeof window !== 'undefined') {
+  console.log('[SkyWeave] API Base URL:', API_BASE);
+}
 
 async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${endpoint}`, {
