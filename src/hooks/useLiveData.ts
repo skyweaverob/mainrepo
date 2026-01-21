@@ -137,7 +137,7 @@ export function useLiveData(options: UseLiveDataOptions = {}) {
           severity: 'warning',
           title: insight.headline,
           message: insight.detail,
-          data: insight,
+          data: insight as unknown as Record<string, unknown>,
         });
       });
 
