@@ -23,6 +23,43 @@ from pydantic import BaseModel
 import pandas as pd
 import numpy as np
 import aiofiles
+import math
+
+
+def sanitize_for_json(obj):
+    """Recursively sanitize data for JSON serialization, handling NaN/Infinity."""
+    if obj is None:
+        return None
+    if isinstance(obj, float):
+        if math.isnan(obj) or math.isinf(obj):
+            return None
+        return obj
+    if isinstance(obj, np.floating):
+        val = float(obj)
+        if math.isnan(val) or math.isinf(val):
+            return None
+        return val
+    if isinstance(obj, np.integer):
+        return int(obj)
+    if isinstance(obj, np.ndarray):
+        return [sanitize_for_json(x) for x in obj.tolist()]
+    if isinstance(obj, pd.Timestamp):
+        return obj.isoformat()
+    if isinstance(obj, dict):
+        return {k: sanitize_for_json(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [sanitize_for_json(x) for x in obj]
+    return obj
+
+
+class NaNSafeJSONResponse(JSONResponse):
+    """JSONResponse that handles NaN and Infinity values."""
+    def render(self, content) -> bytes:
+        sanitized = sanitize_for_json(content)
+        return json.dumps(
+            sanitized,
+            ensure_ascii=False,
+        ).encode("utf-8")
 
 from data_parser import AirlineDataLoader, load_airline_data, infer_route_segment_profile
 from demand_decomposition import DemandDecomposer, NetworkAnalyzer
@@ -36,17 +73,24 @@ from network_intelligence import (
 )
 
 
-# Initialize FastAPI app
+# Initialize FastAPI app with NaN-safe JSON response
 app = FastAPI(
     title="SkyWeave API",
     description="AI-native airline optimization platform",
-    version="0.1.0"
+    version="0.1.0",
+    default_response_class=NaNSafeJSONResponse
 )
 
 # CORS middleware for frontend
+# Allow Railway domains and localhost for development
+ALLOWED_ORIGINS = os.environ.get(
+    "ALLOWED_ORIGINS",
+    "http://localhost:3000,http://127.0.0.1:3000"
+).split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -71,8 +115,9 @@ data_store: Dict[str, Any] = {
     'booking_curve_analyzer': None,
 }
 
-# Data directory - backend/ -> skyweave/ -> NK PROTOTYPE/
-DATA_DIR = Path(__file__).parent.parent.parent
+# Data directory - configurable via environment variable for cloud deployment
+# Default: backend/ -> skyweave/ -> NK PROTOTYPE/
+DATA_DIR = Path(os.environ.get("DATA_PATH", Path(__file__).parent.parent.parent))
 UPLOAD_DIR = Path(__file__).parent / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
 
@@ -103,9 +148,18 @@ def convert_numpy(obj):
     if isinstance(obj, np.integer):
         return int(obj)
     elif isinstance(obj, np.floating):
-        return float(obj)
+        val = float(obj)
+        # Handle NaN and Infinity which are not JSON compliant
+        if np.isnan(val) or np.isinf(val):
+            return None
+        return val
+    elif isinstance(obj, float):
+        # Handle regular Python floats too
+        if np.isnan(obj) or np.isinf(obj):
+            return None
+        return obj
     elif isinstance(obj, np.ndarray):
-        return obj.tolist()
+        return [convert_numpy(x) for x in obj.tolist()]
     elif isinstance(obj, pd.Timestamp):
         return obj.isoformat()
     elif isinstance(obj, dict):
