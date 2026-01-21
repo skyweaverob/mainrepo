@@ -174,6 +174,8 @@ async def load_default_data():
     """Load default data files on startup."""
     print("=" * 60)
     print("SkyWeave Data Loader")
+    print(f"DATA_DIR: {DATA_DIR}")
+    print(f"DATA_DIR exists: {DATA_DIR.exists()}")
     print("=" * 60)
 
     # Try to load Spirit network data
