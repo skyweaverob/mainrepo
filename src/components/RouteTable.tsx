@@ -3,16 +3,22 @@
 import { useState, useMemo } from 'react';
 import { ChevronUp, ChevronDown, Search } from 'lucide-react';
 import { SegmentBar } from './SegmentBar';
+import { formatCurrency, formatRASM } from '@/lib/formatters';
+import { LiveDot } from './LiveFeedIndicator';
 
 interface Route {
   origin: string;
   destination: string;
   route_key: string;
   total_pax: number;
-  avg_load_factor: number | null;
-  avg_spill_rate: number | null;
+  avg_load_factor?: number | null;
+  avg_spill_rate?: number | null;
   avg_fare: number | null;
   segment_mix?: Record<string, number>;
+  // New revenue fields
+  daily_revenue?: number;
+  rasm_cents?: number;
+  contribution_margin?: number;
 }
 
 interface RouteTableProps {
@@ -21,7 +27,7 @@ interface RouteTableProps {
   selectedRoute?: { origin: string; destination: string } | null;
 }
 
-type SortField = 'route_key' | 'total_pax' | 'avg_load_factor' | 'avg_fare';
+type SortField = 'route_key' | 'total_pax' | 'daily_revenue' | 'rasm_cents' | 'avg_fare';
 type SortDirection = 'asc' | 'desc';
 
 // Moved outside component to avoid re-creation during render
@@ -35,7 +41,7 @@ function SortIcon({ field, sortField, sortDirection }: { field: SortField; sortF
 }
 
 export function RouteTable({ routes, onRouteSelect, selectedRoute }: RouteTableProps) {
-  const [sortField, setSortField] = useState<SortField>('total_pax');
+  const [sortField, setSortField] = useState<SortField>('daily_revenue');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -54,11 +60,11 @@ export function RouteTable({ routes, onRouteSelect, selectedRoute }: RouteTableP
 
     // Sort
     return [...filtered].sort((a, b) => {
-      let aVal = a[sortField];
-      let bVal = b[sortField];
+      let aVal = (a as any)[sortField];
+      let bVal = (b as any)[sortField];
 
-      if (aVal === null) aVal = 0;
-      if (bVal === null) bVal = 0;
+      if (aVal === null || aVal === undefined) aVal = 0;
+      if (bVal === null || bVal === undefined) bVal = 0;
 
       if (typeof aVal === 'string') {
         return sortDirection === 'asc'
@@ -82,9 +88,9 @@ export function RouteTable({ routes, onRouteSelect, selectedRoute }: RouteTableP
   };
 
   return (
-    <div className="card">
+    <div className="bg-slate-800 rounded-lg border border-slate-700 flex flex-col h-full">
       {/* Search */}
-      <div className="p-4 border-b border-slate-700">
+      <div className="p-4 border-b border-slate-700 flex-shrink-0">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <input
@@ -92,15 +98,15 @@ export function RouteTable({ routes, onRouteSelect, selectedRoute }: RouteTableP
             placeholder="Search routes (e.g., FLL, BOS, FLL-BOS)"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-blue-500"
+            className="w-full pl-10 pr-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-blue-500"
           />
         </div>
       </div>
 
       {/* Table */}
-      <div className="overflow-x-auto">
+      <div className="flex-1 overflow-auto min-h-0">
         <table className="w-full">
-          <thead>
+          <thead className="sticky top-0 bg-slate-800 z-10">
             <tr className="border-b border-slate-700">
               <th
                 className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider cursor-pointer hover:text-slate-200"
@@ -113,20 +119,20 @@ export function RouteTable({ routes, onRouteSelect, selectedRoute }: RouteTableP
               </th>
               <th
                 className="px-4 py-3 text-right text-xs font-medium text-slate-400 uppercase tracking-wider cursor-pointer hover:text-slate-200"
-                onClick={() => handleSort('total_pax')}
+                onClick={() => handleSort('daily_revenue')}
               >
                 <div className="flex items-center justify-end gap-1">
-                  Pax
-                  <SortIcon field="total_pax" sortField={sortField} sortDirection={sortDirection} />
+                  Daily Rev
+                  <SortIcon field="daily_revenue" sortField={sortField} sortDirection={sortDirection} />
                 </div>
               </th>
               <th
                 className="px-4 py-3 text-right text-xs font-medium text-slate-400 uppercase tracking-wider cursor-pointer hover:text-slate-200"
-                onClick={() => handleSort('avg_load_factor')}
+                onClick={() => handleSort('rasm_cents')}
               >
                 <div className="flex items-center justify-end gap-1">
-                  Load Factor
-                  <SortIcon field="avg_load_factor" sortField={sortField} sortDirection={sortDirection} />
+                  RASM
+                  <SortIcon field="rasm_cents" sortField={sortField} sortDirection={sortDirection} />
                 </div>
               </th>
               <th
@@ -135,6 +141,7 @@ export function RouteTable({ routes, onRouteSelect, selectedRoute }: RouteTableP
               >
                 <div className="flex items-center justify-end gap-1">
                   Avg Fare
+                  <LiveDot lastUpdate={new Date()} isConnected={true} />
                   <SortIcon field="avg_fare" sortField={sortField} sortDirection={sortDirection} />
                 </div>
               </th>
@@ -143,18 +150,22 @@ export function RouteTable({ routes, onRouteSelect, selectedRoute }: RouteTableP
               </th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-800">
+          <tbody className="divide-y divide-slate-700/50">
             {filteredAndSortedRoutes.map((route) => {
               const isSelected = selectedRoute?.origin === route.origin &&
                                 selectedRoute?.destination === route.destination;
+
+              // Determine profitability color
+              const isProfitable = (route.contribution_margin || 0) > 0;
+              const rasmGood = (route.rasm_cents || 0) >= 11;
 
               return (
                 <tr
                   key={route.route_key}
                   className={`cursor-pointer transition-colors ${
                     isSelected
-                      ? 'bg-blue-900/30'
-                      : 'hover:bg-slate-800/50'
+                      ? 'bg-blue-900/30 border-l-2 border-l-blue-500'
+                      : 'hover:bg-slate-700/30'
                   }`}
                   onClick={() => onRouteSelect({ origin: route.origin, destination: route.destination })}
                 >
@@ -166,18 +177,20 @@ export function RouteTable({ routes, onRouteSelect, selectedRoute }: RouteTableP
                     </div>
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <span className="text-sm text-slate-200">{route.total_pax.toLocaleString()}</span>
+                    <span className={`text-sm font-medium ${
+                      isProfitable ? 'text-emerald-400' : 'text-red-400'
+                    }`}>
+                      {route.daily_revenue
+                        ? formatCurrency(route.daily_revenue, { compact: true })
+                        : '-'}
+                    </span>
                   </td>
                   <td className="px-4 py-3 text-right">
                     <span className={`text-sm ${
-                      route.avg_load_factor && route.avg_load_factor > 0.85
-                        ? 'text-green-400'
-                        : route.avg_load_factor && route.avg_load_factor < 0.7
-                          ? 'text-orange-400'
-                          : 'text-slate-200'
+                      rasmGood ? 'text-emerald-400' : 'text-amber-400'
                     }`}>
-                      {route.avg_load_factor
-                        ? `${(route.avg_load_factor * 100).toFixed(1)}%`
+                      {route.rasm_cents
+                        ? formatRASM(route.rasm_cents)
                         : '-'}
                     </span>
                   </td>
@@ -186,7 +199,7 @@ export function RouteTable({ routes, onRouteSelect, selectedRoute }: RouteTableP
                       {route.avg_fare ? `$${route.avg_fare.toFixed(0)}` : '-'}
                     </span>
                   </td>
-                  <td className="px-4 py-3 w-48">
+                  <td className="px-4 py-3 w-40">
                     {route.segment_mix ? (
                       <SegmentBar
                         segments={route.segment_mix}
@@ -194,7 +207,7 @@ export function RouteTable({ routes, onRouteSelect, selectedRoute }: RouteTableP
                         showLabels={false}
                       />
                     ) : (
-                      <div className="h-4 bg-slate-800 rounded animate-pulse" />
+                      <div className="h-4 bg-slate-700 rounded animate-pulse" />
                     )}
                   </td>
                 </tr>
@@ -205,9 +218,14 @@ export function RouteTable({ routes, onRouteSelect, selectedRoute }: RouteTableP
       </div>
 
       {/* Summary */}
-      <div className="px-4 py-3 border-t border-slate-700 text-sm text-slate-400">
+      <div className="px-4 py-3 border-t border-slate-700 text-sm text-slate-400 flex-shrink-0">
         Showing {filteredAndSortedRoutes.length} of {routes.length} routes
+        <span className="text-slate-600 ml-2">
+          • Sorted by {sortField === 'daily_revenue' ? 'Daily Revenue' : sortField === 'rasm_cents' ? 'RASM' : sortField}
+        </span>
       </div>
     </div>
   );
 }
+
+export default RouteTable;
