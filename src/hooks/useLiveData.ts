@@ -286,17 +286,21 @@ export function useLiveData(options: UseLiveDataOptions = {}) {
   }, [fetchFares, fetchFlights, fetchBookings, fetchEvents]);
 
   // Effect to manage polling lifecycle
+  // Using refs to avoid infinite loop from callback recreation
+  const startPollingRef = useRef(startPolling);
+  const stopPollingRef = useRef(stopPolling);
+  startPollingRef.current = startPolling;
+  stopPollingRef.current = stopPolling;
+
   useEffect(() => {
     if (enabled) {
-      startPolling();
-    } else {
-      stopPolling();
+      startPollingRef.current();
     }
 
     return () => {
-      stopPolling();
+      stopPollingRef.current();
     };
-  }, [enabled, startPolling, stopPolling]);
+  }, [enabled]);
 
   return {
     feeds,
