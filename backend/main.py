@@ -310,8 +310,8 @@ async def get_status():
 @app.post("/api/upload")
 async def upload_file(file: UploadFile = File(...)):
     """Upload and process a data file."""
-    # Save file
-    file_path = UPLOAD_DIR / file.filename
+    # Save file to persistent DATA_DIR for restart persistence
+    file_path = DATA_DIR / file.filename
     async with aiofiles.open(file_path, 'wb') as f:
         content = await file.read()
         await f.write(content)
@@ -328,10 +328,57 @@ async def upload_file(file: UploadFile = File(...)):
             data_store['analyzer'] = NetworkAnalyzer(df, schema.column_mappings)
         elif schema.file_type == 'fleet':
             data_store['fleet'] = df
+            # Update cross-domain if it exists
+            if data_store.get('cross_domain'):
+                data_store['cross_domain'].set_operational_data(
+                    fleet_df=data_store['fleet'],
+                    crew_df=data_store.get('crew'),
+                    mro_df=data_store.get('mro')
+                )
         elif schema.file_type == 'crew':
             data_store['crew'] = df
+            if data_store.get('cross_domain'):
+                data_store['cross_domain'].set_operational_data(
+                    fleet_df=data_store.get('fleet'),
+                    crew_df=data_store['crew'],
+                    mro_df=data_store.get('mro')
+                )
         elif schema.file_type == 'mro':
             data_store['mro'] = df
+            if data_store.get('cross_domain'):
+                data_store['cross_domain'].set_operational_data(
+                    fleet_df=data_store.get('fleet'),
+                    crew_df=data_store.get('crew'),
+                    mro_df=data_store['mro']
+                )
+        elif schema.file_type == 'fares':
+            data_store['fares'] = df
+        elif schema.file_type == 'routes':
+            data_store['routes'] = df
+        elif schema.file_type == 'traffic':
+            data_store['traffic'] = df
+
+        # Reload Network Intelligence if relevant files uploaded
+        intel_files = ['T_100_OCT.csv', 'nk_routes.csv', 'f9_routes.csv',
+                       'overlap_markets.csv', 'scraped_fares.csv', 'db1b_market_parsed.csv']
+        if file.filename in intel_files:
+            try:
+                print(f"Reloading Network Intelligence after {file.filename} upload...")
+                network_intel = NetworkIntelligenceEngine(DATA_DIR)
+                network_intel.load_data()
+                data_store['network_intelligence'] = network_intel
+
+                cross_domain = CrossDomainIntelligence(network_intel)
+                cross_domain.set_operational_data(
+                    fleet_df=data_store.get('fleet'),
+                    crew_df=data_store.get('crew'),
+                    mro_df=data_store.get('mro')
+                )
+                data_store['cross_domain'] = cross_domain
+                data_store['insight_engine'] = ActionableInsightEngine(network_intel, cross_domain)
+                print("✓ Network Intelligence reloaded")
+            except Exception as e:
+                print(f"✗ Network Intelligence reload failed: {e}")
 
         return {
             "success": True,
