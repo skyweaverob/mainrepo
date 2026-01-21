@@ -108,7 +108,7 @@ export function RevenueMetricCard({
         {/* Live indicator */}
         {isLive && (
           <div className="flex items-center gap-1.5">
-            <LiveDot lastUpdate={lastUpdate} isConnected={true} />
+            <LiveDot lastUpdate={lastUpdate ?? null} isConnected={true} />
             <span className="text-[10px] text-emerald-400 font-bold uppercase">
               LIVE
             </span>
@@ -208,7 +208,7 @@ export function RevenueMetricRow({
   return (
     <div className="flex items-center justify-between py-1.5 border-b border-slate-700/50 last:border-0">
       <div className="flex items-center gap-2">
-        {isLive && <LiveDot lastUpdate={lastUpdate} isConnected={true} />}
+        {isLive && <LiveDot lastUpdate={lastUpdate ?? null} isConnected={true} />}
         <span className="text-sm text-slate-400">{title}</span>
       </div>
 
