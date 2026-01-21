@@ -37,8 +37,8 @@ interface AppState {
   setError: (error: string | null) => void;
 
   // Active view
-  activeView: 'network' | 'route' | 'fleet' | 'crew' | 'mro' | 'scenarios' | 'intelligence' | 'booking';
-  setActiveView: (view: 'network' | 'route' | 'fleet' | 'crew' | 'mro' | 'scenarios' | 'intelligence' | 'booking') => void;
+  activeView: 'network' | 'route' | 'fleet' | 'crew' | 'mro' | 'scenarios' | 'intelligence' | 'booking' | 'tradeoffs' | 'crossdomain';
+  setActiveView: (view: 'network' | 'route' | 'fleet' | 'crew' | 'mro' | 'scenarios' | 'intelligence' | 'booking' | 'tradeoffs' | 'crossdomain') => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -76,7 +76,7 @@ export const useAppStore = create<AppState>((set) => ({
   error: null,
   setError: (error) => set({ error }),
 
-  // Active view
-  activeView: 'network',
+  // Active view - default to Tradeoffs (the EXECUTE demo) for VC demo
+  activeView: 'tradeoffs',
   setActiveView: (view) => set({ activeView: view }),
 }));

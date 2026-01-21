@@ -130,7 +130,7 @@ const defaultFeedStatus: FeedStatus = {
 
 // Generate unique ID for alerts
 function generateAlertId(): string {
-  return `alert-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  return `alert-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
 }
 
 export const useLiveDataStore = create<LiveDataState>((set, get) => ({

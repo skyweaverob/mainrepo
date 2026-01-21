@@ -15,23 +15,28 @@ import {
   BarChart3,
   Settings,
   Layers,
+  Scale,
+  Crosshair,
 } from 'lucide-react';
 import { useAppStore } from '@/lib/store';
 import { useLiveDataStore } from '@/lib/liveDataStore';
 import { LiveDot } from './LiveFeedIndicator';
 
-// Navigation structure with Plan/Execute sections
+// PLAN: RASM Optimization Engine - demand signals → network arrangement
 const planNavigation = [
-  { id: 'network', name: 'Network', icon: Network },
-  { id: 'intelligence', name: 'Intelligence', icon: Brain },
-  { id: 'booking', name: 'Booking Curves', icon: TrendingUp },
-  { id: 'scenarios', name: 'Simulation', icon: Layers },
+  { id: 'network', name: 'Network', icon: Network, desc: 'Routes & RASM' },
+  { id: 'crossdomain', name: 'Cross-Domain', icon: Crosshair, desc: '5-Domain View' },
+  { id: 'intelligence', name: 'Intelligence', icon: Brain, desc: 'Market Data' },
+  { id: 'booking', name: 'Booking Curves', icon: TrendingUp, desc: 'Demand Signals' },
+  { id: 'scenarios', name: 'Simulation', icon: Layers, desc: 'What-If' },
 ] as const;
 
+// EXECUTE: Tradeoff Optimization Engine - real-time constraint evaluation
 const executeNavigation = [
-  { id: 'fleet', name: 'Fleet & MRO', icon: Plane },
-  { id: 'crew', name: 'Crew', icon: Users },
-  { id: 'mro', name: 'Operations', icon: Wrench },
+  { id: 'tradeoffs', name: 'Tradeoffs', icon: Scale, desc: 'RASM Decisions' },
+  { id: 'fleet', name: 'Fleet', icon: Plane, desc: 'Aircraft' },
+  { id: 'crew', name: 'Crew', icon: Users, desc: 'Staffing' },
+  { id: 'mro', name: 'MRO', icon: Wrench, desc: 'Maintenance' },
 ] as const;
 
 interface SidebarProps {
@@ -58,11 +63,13 @@ export function Sidebar({ dataStatus }: SidebarProps) {
 
     const statusMap: Record<string, boolean> = {
       network: dataStatus.network_loaded,
+      crossdomain: dataStatus.network_loaded && dataStatus.fleet_loaded && dataStatus.crew_loaded,
       intelligence: dataStatus.network_loaded,
       booking: dataStatus.network_loaded,
       fleet: dataStatus.fleet_loaded,
       crew: dataStatus.crew_loaded,
       mro: dataStatus.mro_loaded,
+      tradeoffs: dataStatus.network_loaded,
       scenarios: dataStatus.network_loaded,
     };
 
@@ -79,11 +86,12 @@ export function Sidebar({ dataStatus }: SidebarProps) {
     <aside className="w-64 bg-slate-900 border-r border-slate-800 flex flex-col h-full">
       {/* Navigation */}
       <nav className="flex-1 px-3 py-4 overflow-y-auto">
-        {/* PLAN Section */}
+        {/* PLAN Section - RASM Optimization Engine */}
         <div className="mb-4">
           <button
             onClick={() => setPlanExpanded(!planExpanded)}
-            className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-slate-500 uppercase tracking-wider hover:text-slate-400 transition-colors"
+            className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-emerald-500 uppercase tracking-wider hover:text-emerald-400 transition-colors"
+            title="RASM Optimization Engine: Demand signals → Network arrangement"
           >
             {planExpanded ? (
               <ChevronDown className="w-3 h-3" />
@@ -91,6 +99,7 @@ export function Sidebar({ dataStatus }: SidebarProps) {
               <ChevronRight className="w-3 h-3" />
             )}
             Plan
+            <span className="text-[10px] text-slate-500 font-normal normal-case ml-1">RASM Engine</span>
           </button>
           {planExpanded && (
             <div className="space-y-1 mt-1">
@@ -118,11 +127,12 @@ export function Sidebar({ dataStatus }: SidebarProps) {
           )}
         </div>
 
-        {/* EXECUTE Section */}
+        {/* EXECUTE Section - Tradeoff Optimization Engine */}
         <div className="mb-4">
           <button
             onClick={() => setExecuteExpanded(!executeExpanded)}
-            className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-slate-500 uppercase tracking-wider hover:text-slate-400 transition-colors"
+            className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-blue-400 uppercase tracking-wider hover:text-blue-300 transition-colors"
+            title="Tradeoff Optimization Engine: Real-time constraint evaluation"
           >
             {executeExpanded ? (
               <ChevronDown className="w-3 h-3" />
@@ -130,6 +140,7 @@ export function Sidebar({ dataStatus }: SidebarProps) {
               <ChevronRight className="w-3 h-3" />
             )}
             Execute
+            <span className="text-[10px] text-slate-500 font-normal normal-case ml-1">Tradeoffs</span>
           </button>
           {executeExpanded && (
             <div className="space-y-1 mt-1">

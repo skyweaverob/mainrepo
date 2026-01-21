@@ -256,8 +256,8 @@ export async function fetchEventsForAirport(
 
     // Transform events
     const events: EventData[] = (data.events || []).slice(0, 10).map((event: any) => ({
-      title: event.title,
-      date: event.date ? `${event.date.month} ${event.date.day}` : 'TBD',
+      title: event.title || 'Event',
+      date: event.date?.month && event.date?.day ? `${event.date.month} ${event.date.day}` : 'TBD',
       venue: event.venue?.name || event.location || 'TBD',
       location: event.address || cityInfo.city,
       description: event.description,

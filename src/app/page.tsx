@@ -6,12 +6,13 @@ import { NetworkView } from '@/components/NetworkView';
 import { FleetView } from '@/components/FleetView';
 import { CrewView } from '@/components/CrewView';
 import { MROView } from '@/components/MROView';
-import { ScenarioView } from '@/components/ScenarioView';
 import IntelligenceView from '@/components/IntelligenceView';
 import BookingCurveView from '@/components/BookingCurveView';
 import { GlobalHeader } from '@/components/GlobalHeader';
 import { ConnectionStatus } from '@/components/ConnectionStatus';
 import { HubDetailView } from '@/components/HubDetailView';
+import { OptimizationDemo } from '@/components/OptimizationDemo';
+import { CrossDomainInsights } from '@/components/CrossDomainInsights';
 import { useAppStore } from '@/lib/store';
 import { useLiveDataStore } from '@/lib/liveDataStore';
 import { useLiveData } from '@/hooks/useLiveData';
@@ -93,6 +94,8 @@ export default function Home() {
     switch (activeView) {
       case 'network':
         return <NetworkView onHubClick={handleHubClick} />;
+      case 'crossdomain':
+        return <CrossDomainInsights />;
       case 'intelligence':
         return (
           <div className="h-full overflow-auto p-6">
@@ -107,6 +110,12 @@ export default function Home() {
             <BookingCurveView />
           </div>
         );
+      case 'tradeoffs':
+        return (
+          <div className="h-full overflow-auto p-6 flex items-center justify-center">
+            <OptimizationDemo />
+          </div>
+        );
       case 'fleet':
         return <FleetView />;
       case 'crew':
@@ -114,9 +123,20 @@ export default function Home() {
       case 'mro':
         return <MROView />;
       case 'scenarios':
-        return <ScenarioView />;
+        // Simulation - simplified view for what-if analysis
+        return (
+          <div className="h-full overflow-auto p-6">
+            <h2 className="text-2xl font-bold text-white mb-6">Network Simulation</h2>
+            <p className="text-slate-400">What-if analysis for network changes</p>
+          </div>
+        );
       default:
-        return <NetworkView onHubClick={handleHubClick} />;
+        // Default to Tradeoffs demo - the core EXECUTE function
+        return (
+          <div className="h-full overflow-auto p-6 flex items-center justify-center">
+            <OptimizationDemo />
+          </div>
+        );
     }
   };
 

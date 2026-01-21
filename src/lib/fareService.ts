@@ -246,7 +246,7 @@ export async function fetchLiveFares(
         });
 
         // Check for Spirit (NK)
-        if (airline.toLowerCase().includes('spirit') || airline === 'NK') {
+        if (airline.toLowerCase().includes('spirit') || airline.toUpperCase() === 'NK') {
           nkFare = data.min_fare;
         }
       }
