@@ -2,16 +2,27 @@
 // Manages polling intervals, data freshness, and triggers updates
 
 import { useEffect, useCallback, useRef } from 'react';
-import { useLiveDataStore, FeedType, HubHealth } from '@/lib/liveDataStore';
+import { useLiveDataStore, FeedType, HubHealth, LiveFareData } from '@/lib/liveDataStore';
 import * as api from '@/lib/api';
+import * as fareService from '@/lib/fareService';
 
 // Polling intervals in milliseconds
+// Note: Fares are NOT polled on interval - they use rate-limited on-demand fetching
 const POLLING_INTERVALS: Record<FeedType, number> = {
-  fares: 60000,      // 60 seconds for fare data
+  fares: 300000,     // 5 minutes - just to check budget status, not fetch
   flights: 30000,    // 30 seconds for flight status
   bookings: 45000,   // 45 seconds for booking data
   events: 180000,    // 3 minutes for events (less frequent)
 };
+
+// Priority routes to fetch fares for (high-traffic, competitive markets)
+const PRIORITY_ROUTES = [
+  { origin: 'FLL', destination: 'BOS' },
+  { origin: 'DTW', destination: 'MCO' },
+  { origin: 'LAS', destination: 'LAX' },
+  { origin: 'EWR', destination: 'MIA' },
+  { origin: 'MCO', destination: 'DTW' },
+];
 
 // Hub codes to monitor
 const HUB_CODES = ['DTW', 'MCO', 'FLL', 'LAS', 'EWR'];
@@ -38,6 +49,9 @@ export function useLiveData(options: UseLiveDataOptions = {}) {
     setIsPolling,
     addAlert,
     networkHealth,
+    liveFares,
+    setLiveFare,
+    setApiBudget,
   } = useLiveDataStore();
 
   const intervalsRef = useRef<Record<FeedType, NodeJS.Timeout | null>>({
@@ -49,28 +63,74 @@ export function useLiveData(options: UseLiveDataOptions = {}) {
 
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Fetch fare data from competitive sources
+  // Fetch fare data using rate-limited SerpAPI service
   const fetchFares = useCallback(async () => {
     try {
-      // Sample route for fare checking - in production this would cycle through routes
-      const response = await api.getFareIntelligence();
+      // Update budget status
+      const budget = fareService.getRemainingBudget();
+      setApiBudget(budget);
+
+      // Only fetch if we have budget
+      if (!fareService.hasBudget()) {
+        setFeedStatus('fares', {
+          lastUpdate: new Date(),
+          isConnected: true,
+          recordCount: liveFares.size,
+          error: 'Daily API budget exhausted (500 calls)',
+        });
+        return;
+      }
+
+      // Fetch fares for priority routes (max 5 at a time to conserve budget)
+      const results = await fareService.fetchFaresForRoutes(PRIORITY_ROUTES, 5);
+
+      let alertsGenerated = 0;
+      results.forEach((data, route) => {
+        // Store in live fares
+        const fareData: LiveFareData = {
+          route: data.route,
+          minFare: data.minFare,
+          nkFare: data.nkFare,
+          fareAdvantage: data.fareAdvantage,
+          competitorCount: data.competitorFares.length,
+          fetchedAt: data.fetchedAt,
+          isStale: data.isStale,
+        };
+        setLiveFare(route, fareData);
+
+        // Check for alerts (compare with previous min fare if we have it)
+        const prevFare = liveFares.get(route);
+        const alert = fareService.detectFareAlert(data, prevFare?.minFare ?? null);
+
+        if (alert?.hasAlert) {
+          addAlert({
+            type: 'competitor_fare',
+            severity: alert.severity,
+            title: `Fare Alert: ${route}`,
+            message: alert.message,
+            route,
+            data: { ...data } as unknown as Record<string, unknown>,
+          });
+          alertsGenerated++;
+        }
+      });
 
       setFeedStatus('fares', {
         lastUpdate: new Date(),
         isConnected: true,
-        recordCount: response.total_observations || 0,
+        recordCount: results.size,
         error: null,
       });
 
-      onUpdate?.('fares', response);
-      return response;
+      onUpdate?.('fares', { routes: Array.from(results.keys()), alertsGenerated });
+      return results;
     } catch (error) {
       const err = error instanceof Error ? error : new Error('Unknown error');
       setFeedStatus('fares', { error: err.message, isConnected: false });
       onError?.('fares', err);
       throw error;
     }
-  }, [setFeedStatus, onUpdate, onError]);
+  }, [setFeedStatus, setLiveFare, setApiBudget, addAlert, liveFares, onUpdate, onError]);
 
   // Fetch flight/schedule data
   const fetchFlights = useCallback(async () => {
@@ -186,22 +246,28 @@ export function useLiveData(options: UseLiveDataOptions = {}) {
 
       const totalRevenue = Object.values(hubRevenues).reduce((sum, r) => sum + r, 0);
 
+      // Alert threshold: RASM below 10 cents indicates underperformance
+      const RASM_ALERT_THRESHOLD = 10;
+
       const hubs: HubHealth[] = [
-        ...HUB_CODES.map(code => ({
-          code,
-          name: getHubName(code),
-          dailyRevenue: hubRevenues[code] || 0,
-          revenueDelta: (Math.random() - 0.3) * 10, // Simulated delta for demo
-          rasmCents: hubRasm[code] || 11,
-          hasAlert: code === 'FLL', // FLL has alert per spec
-          lastUpdate: new Date(),
-        })),
+        ...HUB_CODES.map(code => {
+          const rasm = hubRasm[code] || 0;
+          return {
+            code,
+            name: getHubName(code),
+            dailyRevenue: hubRevenues[code] || 0,
+            revenueDelta: null, // No historical data available for comparison
+            rasmCents: rasm,
+            hasAlert: rasm > 0 && rasm < RASM_ALERT_THRESHOLD, // Alert on low RASM
+            lastUpdate: new Date(),
+          };
+        }),
         {
           code: 'P2P',
           name: 'Point-to-Point',
-          dailyRevenue: hubRevenues['P2P'] || 1100000,
-          revenueDelta: -0.4,
-          rasmCents: 9.8,
+          dailyRevenue: hubRevenues['P2P'] || 0,
+          revenueDelta: null, // No historical data
+          rasmCents: hubRasm['P2P'] || 0,
           hasAlert: false,
           lastUpdate: new Date(),
         },
@@ -209,7 +275,7 @@ export function useLiveData(options: UseLiveDataOptions = {}) {
 
       setNetworkHealth({
         totalDailyRevenue: totalRevenue,
-        revenueDelta: 2.1,
+        revenueDelta: null, // No historical data for network-wide delta
         hubs,
         lastUpdate: new Date(),
       });
@@ -285,6 +351,61 @@ export function useLiveData(options: UseLiveDataOptions = {}) {
     }
   }, [fetchFares, fetchFlights, fetchBookings, fetchEvents]);
 
+  // Fetch live fares for a specific route (on-demand, rate-limited)
+  const fetchRouteFares = useCallback(async (origin: string, destination: string, forceFresh = false) => {
+    const budget = fareService.getRemainingBudget();
+    setApiBudget(budget);
+
+    if (!fareService.hasBudget() && !forceFresh) {
+      // Return cached data if available
+      const cached = liveFares.get(`${origin}-${destination}`);
+      return cached ?? null;
+    }
+
+    try {
+      const data = await fareService.fetchLiveFares(origin, destination, undefined, forceFresh);
+
+      const fareData: LiveFareData = {
+        route: data.route,
+        minFare: data.minFare,
+        nkFare: data.nkFare,
+        fareAdvantage: data.fareAdvantage,
+        competitorCount: data.competitorFares.length,
+        fetchedAt: data.fetchedAt,
+        isStale: data.isStale,
+      };
+      setLiveFare(`${origin}-${destination}`, fareData);
+
+      // Check for alert
+      const prevFare = liveFares.get(`${origin}-${destination}`);
+      const alert = fareService.detectFareAlert(data, prevFare?.minFare ?? null);
+
+      if (alert?.hasAlert) {
+        addAlert({
+          type: 'competitor_fare',
+          severity: alert.severity,
+          title: `Fare Alert: ${origin}-${destination}`,
+          message: alert.message,
+          route: `${origin}-${destination}`,
+          data: { ...data } as unknown as Record<string, unknown>,
+        });
+      }
+
+      // Update budget after call
+      setApiBudget(fareService.getRemainingBudget());
+
+      return fareData;
+    } catch (error) {
+      console.error('Failed to fetch route fares:', error);
+      return liveFares.get(`${origin}-${destination}`) ?? null;
+    }
+  }, [setLiveFare, setApiBudget, addAlert, liveFares]);
+
+  // Get current API budget status
+  const getApiBudget = useCallback(() => {
+    return fareService.getRemainingBudget();
+  }, []);
+
   // Effect to manage polling lifecycle
   // Using refs to avoid infinite loop from callback recreation
   const startPollingRef = useRef(startPolling);
@@ -305,11 +426,15 @@ export function useLiveData(options: UseLiveDataOptions = {}) {
   return {
     feeds,
     networkHealth,
+    liveFares,
     isPolling,
     startPolling,
     stopPolling,
     refreshFeed,
     refreshAll: fetchHubHealth,
+    // Live fare functions
+    fetchRouteFares,
+    getApiBudget,
   };
 }
 

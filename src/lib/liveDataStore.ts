@@ -6,6 +6,24 @@ import { create } from 'zustand';
 // Feed types that we track
 export type FeedType = 'fares' | 'flights' | 'bookings' | 'events';
 
+// Live fare data from SerpAPI
+export interface LiveFareData {
+  route: string;
+  minFare: number | null;
+  nkFare: number | null;
+  fareAdvantage: number | null;
+  competitorCount: number;
+  fetchedAt: Date;
+  isStale: boolean;
+}
+
+// API budget tracking
+export interface ApiBudget {
+  used: number;
+  remaining: number;
+  limit: number;
+}
+
 // Status of each feed
 export interface FeedStatus {
   lastUpdate: Date | null;
@@ -33,7 +51,7 @@ export interface HubHealth {
   code: string;
   name: string;
   dailyRevenue: number;
-  revenueDelta: number; // % change vs same day last week
+  revenueDelta: number | null; // % change vs same day last week (null if no historical data)
   rasmCents: number;
   hasAlert: boolean;
   lastUpdate: Date | null;
@@ -42,7 +60,7 @@ export interface HubHealth {
 // Network-wide metrics
 export interface NetworkHealth {
   totalDailyRevenue: number;
-  revenueDelta: number;
+  revenueDelta: number | null; // null if no historical data available
   hubs: HubHealth[];
   lastUpdate: Date | null;
 }
@@ -80,16 +98,26 @@ interface LiveDataState {
   // Polling control
   isPolling: boolean;
   setIsPolling: (polling: boolean) => void;
+
+  // Live fares from SerpAPI
+  liveFares: Map<string, LiveFareData>;
+  setLiveFare: (route: string, data: LiveFareData) => void;
+  getLiveFare: (route: string) => LiveFareData | undefined;
+  clearLiveFares: () => void;
+
+  // API budget tracking
+  apiBudget: ApiBudget;
+  setApiBudget: (budget: ApiBudget) => void;
 }
 
 // Default hub configuration (Spirit Airlines)
 const DEFAULT_HUBS: HubHealth[] = [
-  { code: 'DTW', name: 'Detroit', dailyRevenue: 0, revenueDelta: 0, rasmCents: 0, hasAlert: false, lastUpdate: null },
-  { code: 'MCO', name: 'Orlando', dailyRevenue: 0, revenueDelta: 0, rasmCents: 0, hasAlert: false, lastUpdate: null },
-  { code: 'FLL', name: 'Fort Lauderdale', dailyRevenue: 0, revenueDelta: 0, rasmCents: 0, hasAlert: false, lastUpdate: null },
-  { code: 'LAS', name: 'Las Vegas', dailyRevenue: 0, revenueDelta: 0, rasmCents: 0, hasAlert: false, lastUpdate: null },
-  { code: 'EWR', name: 'Newark', dailyRevenue: 0, revenueDelta: 0, rasmCents: 0, hasAlert: false, lastUpdate: null },
-  { code: 'P2P', name: 'Point-to-Point', dailyRevenue: 0, revenueDelta: 0, rasmCents: 0, hasAlert: false, lastUpdate: null },
+  { code: 'DTW', name: 'Detroit', dailyRevenue: 0, revenueDelta: null, rasmCents: 0, hasAlert: false, lastUpdate: null },
+  { code: 'MCO', name: 'Orlando', dailyRevenue: 0, revenueDelta: null, rasmCents: 0, hasAlert: false, lastUpdate: null },
+  { code: 'FLL', name: 'Fort Lauderdale', dailyRevenue: 0, revenueDelta: null, rasmCents: 0, hasAlert: false, lastUpdate: null },
+  { code: 'LAS', name: 'Las Vegas', dailyRevenue: 0, revenueDelta: null, rasmCents: 0, hasAlert: false, lastUpdate: null },
+  { code: 'EWR', name: 'Newark', dailyRevenue: 0, revenueDelta: null, rasmCents: 0, hasAlert: false, lastUpdate: null },
+  { code: 'P2P', name: 'Point-to-Point', dailyRevenue: 0, revenueDelta: null, rasmCents: 0, hasAlert: false, lastUpdate: null },
 ];
 
 // Default feed status
@@ -181,10 +209,10 @@ export const useLiveDataStore = create<LiveDataState>((set, get) => ({
 
   unreadAlertCount: 0,
 
-  // Network health
+  // Network health - starts empty, populated from API
   networkHealth: {
-    totalDailyRevenue: 13500000, // $13.5M default
-    revenueDelta: 2.1,
+    totalDailyRevenue: 0,
+    revenueDelta: null,
     hubs: DEFAULT_HUBS,
     lastUpdate: null,
   },
@@ -198,6 +226,24 @@ export const useLiveDataStore = create<LiveDataState>((set, get) => ({
   // Polling control
   isPolling: false,
   setIsPolling: (polling) => set({ isPolling: polling }),
+
+  // Live fares from SerpAPI
+  liveFares: new Map<string, LiveFareData>(),
+  setLiveFare: (route, data) =>
+    set((state) => {
+      const newFares = new Map(state.liveFares);
+      newFares.set(route, data);
+      return { liveFares: newFares };
+    }),
+  getLiveFare: (route) => {
+    // Note: This is a selector pattern, use with get()
+    return undefined; // Implemented via direct state access
+  },
+  clearLiveFares: () => set({ liveFares: new Map() }),
+
+  // API budget tracking
+  apiBudget: { used: 0, remaining: 500, limit: 500 },
+  setApiBudget: (budget) => set({ apiBudget: budget }),
 }));
 
 // Selectors for common patterns

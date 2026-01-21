@@ -8,13 +8,14 @@ import { AlertTriangle } from 'lucide-react';
 interface HubHealthBarProps {
   hubs: HubHealth[];
   totalRevenue: number;
-  revenueDelta: number;
+  revenueDelta: number | null;
   onHubClick?: (hubCode: string) => void;
   selectedHub?: string | null;
 }
 
 /**
- * HubHealthBar - Horizontal bar showing daily revenue per hub
+ * HubHealthBar - Horizontal bar showing RASM and revenue per hub
+ * RASM is the north star metric - shown prominently first
  * Appears in the global header (Row 3)
  */
 export function HubHealthBar({
@@ -24,25 +25,51 @@ export function HubHealthBar({
   onHubClick,
   selectedHub,
 }: HubHealthBarProps) {
+  // Calculate network-wide weighted average RASM
+  const networkRasm = useMemo(() => {
+    const totalWeightedRasm = hubs.reduce((sum, h) => sum + h.rasmCents * h.dailyRevenue, 0);
+    const totalRev = hubs.reduce((sum, h) => sum + h.dailyRevenue, 0);
+    return totalRev > 0 ? totalWeightedRasm / totalRev : 0;
+  }, [hubs]);
+
+  // RASM health indicator
+  const rasmColorClass = useMemo(() => {
+    if (networkRasm >= 12) return 'text-emerald-400';
+    if (networkRasm >= 10) return 'text-amber-400';
+    return 'text-red-400';
+  }, [networkRasm]);
+
   return (
     <div className="flex items-center gap-3 px-4 py-2 bg-slate-800/50 border-y border-slate-700/50">
-      {/* Network total */}
-      <div className="flex items-center gap-2 pr-4 border-r border-slate-700">
-        <span className="text-xs text-slate-400 font-medium">Network:</span>
-        <span className="text-sm font-bold text-white">
-          {formatCurrency(totalRevenue, { compact: true })}
-        </span>
-        <span
-          className={`text-xs font-medium ${
-            revenueDelta > 0 ? 'text-emerald-400' : revenueDelta < 0 ? 'text-red-400' : 'text-slate-400'
-          }`}
-        >
-          {revenueDelta > 0 ? '▲' : revenueDelta < 0 ? '▼' : ''}
-          {Math.abs(revenueDelta).toFixed(1)}%
+      {/* Network RASM - North Star Metric */}
+      <div className="flex items-center gap-2 pr-3 border-r border-slate-700">
+        <span className="text-[10px] uppercase tracking-wider text-slate-500 font-medium">RASM</span>
+        <span className={`text-lg font-bold ${rasmColorClass}`}>
+          {networkRasm > 0 ? `${networkRasm.toFixed(1)}¢` : '—'}
         </span>
       </div>
 
-      {/* Hub segments */}
+      {/* Network Revenue */}
+      <div className="flex items-center gap-2 pr-3 border-r border-slate-700">
+        <span className="text-xs text-slate-400">Daily:</span>
+        <span className="text-sm font-bold text-white">
+          {totalRevenue > 0 ? formatCurrency(totalRevenue, { compact: true }) : '—'}
+        </span>
+        {revenueDelta !== null ? (
+          <span
+            className={`text-xs font-medium ${
+              revenueDelta > 0 ? 'text-emerald-400' : revenueDelta < 0 ? 'text-red-400' : 'text-slate-400'
+            }`}
+          >
+            {revenueDelta > 0 ? '▲' : revenueDelta < 0 ? '▼' : ''}
+            {Math.abs(revenueDelta).toFixed(1)}%
+          </span>
+        ) : (
+          <span className="text-xs text-slate-500">—</span>
+        )}
+      </div>
+
+      {/* Hub segments - now showing RASM prominently */}
       <div className="flex items-center gap-2 overflow-x-auto">
         {hubs.map((hub) => (
           <HubSegment
@@ -64,8 +91,8 @@ interface HubSegmentProps {
 }
 
 function HubSegment({ hub, onClick, isSelected }: HubSegmentProps) {
-  const colorClass = useMemo(() => {
-    // Color based on RASM performance
+  const rasmColorClass = useMemo(() => {
+    // Color based on RASM performance - RASM thresholds for ULCC
     if (hub.rasmCents >= 12) return 'text-emerald-400';
     if (hub.rasmCents >= 10) return 'text-amber-400';
     return 'text-red-400';
@@ -81,10 +108,10 @@ function HubSegment({ hub, onClick, isSelected }: HubSegmentProps) {
     <button
       onClick={onClick}
       className={`
-        flex items-center gap-1.5 px-2.5 py-1 rounded border transition-colors
+        flex items-center gap-2 px-2.5 py-1 rounded border transition-colors
         ${bgClass}
       `}
-      title={`${hub.name} - RASM: ${hub.rasmCents.toFixed(1)}¢`}
+      title={`${hub.name}\nRASM: ${hub.rasmCents.toFixed(1)}¢\nDaily: ${formatCurrency(hub.dailyRevenue, { compact: true })}`}
     >
       {/* Alert indicator */}
       {hub.hasAlert && (
@@ -96,13 +123,18 @@ function HubSegment({ hub, onClick, isSelected }: HubSegmentProps) {
         {hub.code}
       </span>
 
-      {/* Revenue */}
-      <span className={`text-xs font-medium ${colorClass}`}>
+      {/* RASM - Now the primary metric shown */}
+      <span className={`text-xs font-bold ${rasmColorClass}`}>
+        {hub.rasmCents > 0 ? `${hub.rasmCents.toFixed(1)}¢` : '—'}
+      </span>
+
+      {/* Revenue in smaller text */}
+      <span className="text-[10px] text-slate-400">
         {formatCurrency(hub.dailyRevenue, { compact: true })}
       </span>
 
-      {/* Delta indicator */}
-      {hub.revenueDelta !== 0 && (
+      {/* Delta indicator - only show if we have historical data */}
+      {hub.revenueDelta !== null && hub.revenueDelta !== 0 && (
         <span
           className={`text-[10px] ${
             hub.revenueDelta > 0 ? 'text-emerald-400' : 'text-red-400'

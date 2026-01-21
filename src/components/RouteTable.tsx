@@ -41,7 +41,8 @@ function SortIcon({ field, sortField, sortDirection }: { field: SortField; sortF
 }
 
 export function RouteTable({ routes, onRouteSelect, selectedRoute }: RouteTableProps) {
-  const [sortField, setSortField] = useState<SortField>('daily_revenue');
+  // Default sort by RASM (north star metric) descending
+  const [sortField, setSortField] = useState<SortField>('rasm_cents');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -117,6 +118,16 @@ export function RouteTable({ routes, onRouteSelect, selectedRoute }: RouteTableP
                   <SortIcon field="route_key" sortField={sortField} sortDirection={sortDirection} />
                 </div>
               </th>
+              {/* RASM first - North Star Metric */}
+              <th
+                className="px-4 py-3 text-right text-xs font-medium text-emerald-400 uppercase tracking-wider cursor-pointer hover:text-emerald-200"
+                onClick={() => handleSort('rasm_cents')}
+              >
+                <div className="flex items-center justify-end gap-1">
+                  RASM
+                  <SortIcon field="rasm_cents" sortField={sortField} sortDirection={sortDirection} />
+                </div>
+              </th>
               <th
                 className="px-4 py-3 text-right text-xs font-medium text-slate-400 uppercase tracking-wider cursor-pointer hover:text-slate-200"
                 onClick={() => handleSort('daily_revenue')}
@@ -124,15 +135,6 @@ export function RouteTable({ routes, onRouteSelect, selectedRoute }: RouteTableP
                 <div className="flex items-center justify-end gap-1">
                   Daily Rev
                   <SortIcon field="daily_revenue" sortField={sortField} sortDirection={sortDirection} />
-                </div>
-              </th>
-              <th
-                className="px-4 py-3 text-right text-xs font-medium text-slate-400 uppercase tracking-wider cursor-pointer hover:text-slate-200"
-                onClick={() => handleSort('rasm_cents')}
-              >
-                <div className="flex items-center justify-end gap-1">
-                  RASM
-                  <SortIcon field="rasm_cents" sortField={sortField} sortDirection={sortDirection} />
                 </div>
               </th>
               <th
@@ -176,21 +178,22 @@ export function RouteTable({ routes, onRouteSelect, selectedRoute }: RouteTableP
                       <span className="font-mono text-sm text-slate-200">{route.destination}</span>
                     </div>
                   </td>
+                  {/* RASM first - North Star Metric */}
+                  <td className="px-4 py-3 text-right">
+                    <span className={`text-sm font-bold ${
+                      rasmGood ? 'text-emerald-400' : (route.rasm_cents || 0) >= 10 ? 'text-amber-400' : 'text-red-400'
+                    }`}>
+                      {route.rasm_cents
+                        ? formatRASM(route.rasm_cents)
+                        : '-'}
+                    </span>
+                  </td>
                   <td className="px-4 py-3 text-right">
                     <span className={`text-sm font-medium ${
                       isProfitable ? 'text-emerald-400' : 'text-red-400'
                     }`}>
                       {route.daily_revenue
                         ? formatCurrency(route.daily_revenue, { compact: true })
-                        : '-'}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <span className={`text-sm ${
-                      rasmGood ? 'text-emerald-400' : 'text-amber-400'
-                    }`}>
-                      {route.rasm_cents
-                        ? formatRASM(route.rasm_cents)
                         : '-'}
                     </span>
                   </td>

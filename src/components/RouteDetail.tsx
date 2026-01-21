@@ -5,9 +5,10 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend
 } from 'recharts';
-import { X, TrendingUp, TrendingDown, AlertTriangle, Ship, Thermometer, Calendar } from 'lucide-react';
+import { X, TrendingUp, TrendingDown, AlertTriangle, Ship, Thermometer, Calendar, Plane, Users, Wrench, DollarSign, Network } from 'lucide-react';
 import { SegmentBar } from './SegmentBar';
 import { SEGMENT_COLORS, SEGMENT_LABELS, SegmentType } from '@/types';
+import { formatCurrency, formatRASM } from '@/lib/formatters';
 import * as api from '@/lib/api';
 
 interface RouteDetailProps {
@@ -22,6 +23,8 @@ export function RouteDetail({ origin, destination, onClose }: RouteDetailProps) 
   const [decomposition, setDecomposition] = useState<any>(null);
   const [signals, setSignals] = useState<any>(null);
   const [liveWeather, setLiveWeather] = useState<any>(null);
+  const [routePnl, setRoutePnl] = useState<any>(null);
+  const [marketIntel, setMarketIntel] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -39,10 +42,16 @@ export function RouteDetail({ origin, destination, onClose }: RouteDetailProps) 
         setDecomposition(decompData);
         setSignals(signalData);
 
-        // Fetch live weather in background (non-blocking)
-        api.getLiveWeatherDifferential(origin, destination)
-          .then(setLiveWeather)
-          .catch(console.error);
+        // Fetch route P&L and market intel in background (non-blocking)
+        Promise.all([
+          api.getRoutePnl(origin, destination),
+          api.getMarketIntelligenceDetail(`${origin}_${destination}`),
+          api.getLiveWeatherDifferential(origin, destination),
+        ]).then(([pnl, intel, weather]) => {
+          setRoutePnl(pnl);
+          setMarketIntel(intel);
+          setLiveWeather(weather);
+        }).catch(console.error);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load route data');
       } finally {
@@ -119,6 +128,35 @@ export function RouteDetail({ origin, destination, onClose }: RouteDetailProps) 
       </div>
 
       <div className="p-6 space-y-6">
+        {/* RASM - North Star Metric (highlighted) */}
+        {routePnl && (
+          <div className="p-4 bg-gradient-to-r from-emerald-900/30 to-slate-800 rounded-lg border border-emerald-500/30">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-emerald-400 font-medium uppercase tracking-wider mb-1">Route RASM</p>
+                <p className={`text-3xl font-bold ${
+                  routePnl.rasm_cents >= 12 ? 'text-emerald-400' :
+                  routePnl.rasm_cents >= 10 ? 'text-amber-400' : 'text-red-400'
+                }`}>
+                  {routePnl.rasm_cents ? `${routePnl.rasm_cents.toFixed(1)}¢` : '-'}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-xs text-slate-400 mb-1">vs Network Avg</p>
+                <p className={`text-sm font-medium ${
+                  (routePnl.rasm_cents || 0) > 11 ? 'text-emerald-400' : 'text-amber-400'
+                }`}>
+                  {routePnl.rasm_cents >= 11 ? '▲ Above' : '▼ Below'} average
+                </p>
+              </div>
+            </div>
+            <div className="mt-3 pt-3 border-t border-slate-700/50 flex justify-between text-sm">
+              <span className="text-slate-400">Daily Revenue: <span className="text-white font-medium">{formatCurrency(routePnl.estimated_annual_revenue / 365, { compact: true })}</span></span>
+              <span className="text-slate-400">Margin: <span className={routePnl.profit_margin_pct > 10 ? 'text-emerald-400' : 'text-amber-400'}>{routePnl.profit_margin_pct?.toFixed(1)}%</span></span>
+            </div>
+          </div>
+        )}
+
         {/* Key Metrics */}
         <div className="grid grid-cols-3 gap-4">
           <div className="p-4 bg-slate-800 rounded-lg">
@@ -148,6 +186,73 @@ export function RouteDetail({ origin, destination, onClose }: RouteDetailProps) 
             <p className="text-2xl font-semibold text-slate-100">
               {decomposition.avg_fare ? `$${decomposition.avg_fare.toFixed(0)}` : '-'}
             </p>
+          </div>
+        </div>
+
+        {/* Cross-Domain RASM Impact */}
+        <div>
+          <h3 className="text-sm font-medium text-slate-300 mb-3 flex items-center gap-2">
+            <Network className="w-4 h-4 text-blue-400" />
+            RASM Optimization Levers
+          </h3>
+          <div className="grid grid-cols-1 gap-2">
+            {/* Network lever */}
+            <RasmLever
+              icon={<Plane className="w-4 h-4 text-blue-400" />}
+              domain="Network"
+              description={decomposition.avg_spill_rate > 0.05
+                ? `High spill rate (${(decomposition.avg_spill_rate * 100).toFixed(1)}%) - add frequency to capture demand`
+                : 'Frequency optimized for demand'
+              }
+              rasmImpact={decomposition.avg_spill_rate > 0.05 ? '+0.3-0.5¢' : null}
+              status={decomposition.avg_spill_rate > 0.05 ? 'opportunity' : 'optimal'}
+            />
+
+            {/* Fleet lever */}
+            <RasmLever
+              icon={<Plane className="w-4 h-4 text-cyan-400" />}
+              domain="Fleet"
+              description={decomposition.avg_load_factor < 0.85
+                ? `Load factor ${(decomposition.avg_load_factor * 100).toFixed(0)}% - consider smaller gauge`
+                : decomposition.avg_load_factor > 0.92
+                ? `Load factor ${(decomposition.avg_load_factor * 100).toFixed(0)}% - upgrade to MAX`
+                : 'Right-sized equipment'
+              }
+              rasmImpact={decomposition.avg_load_factor < 0.80 || decomposition.avg_load_factor > 0.92 ? '+0.2-0.4¢' : null}
+              status={decomposition.avg_load_factor < 0.80 ? 'opportunity' : decomposition.avg_load_factor > 0.92 ? 'opportunity' : 'optimal'}
+            />
+
+            {/* Crew lever */}
+            <RasmLever
+              icon={<Users className="w-4 h-4 text-purple-400" />}
+              domain="Crew"
+              description="Crew availability aligned with schedule"
+              rasmImpact={null}
+              status="optimal"
+            />
+
+            {/* MRO lever */}
+            <RasmLever
+              icon={<Wrench className="w-4 h-4 text-orange-400" />}
+              domain="MRO"
+              description="No scheduled maintenance conflicts"
+              rasmImpact={null}
+              status="optimal"
+            />
+
+            {/* Revenue Management lever */}
+            <RasmLever
+              icon={<DollarSign className="w-4 h-4 text-emerald-400" />}
+              domain="Revenue Mgmt"
+              description={routePnl?.competitive_context?.fare_vs_f9 > 10
+                ? `NK $${routePnl.competitive_context.fare_vs_f9.toFixed(0)} above F9 - fare pressure`
+                : routePnl?.competitive_context?.fare_vs_f9 < -10
+                ? `NK $${Math.abs(routePnl.competitive_context.fare_vs_f9).toFixed(0)} below F9 - yield opportunity`
+                : 'Fare competitive in market'
+              }
+              rasmImpact={routePnl?.competitive_context?.fare_vs_f9 < -10 ? '+0.5-1.0¢' : null}
+              status={routePnl?.competitive_context?.fare_vs_f9 < -10 ? 'opportunity' : 'optimal'}
+            />
           </div>
         </div>
 
@@ -383,6 +488,53 @@ export function RouteDetail({ origin, destination, onClose }: RouteDetailProps) 
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * RasmLever - Shows cross-domain impact on RASM
+ * Each lever represents one of the 5 optimization domains
+ */
+function RasmLever({
+  icon,
+  domain,
+  description,
+  rasmImpact,
+  status,
+}: {
+  icon: React.ReactNode;
+  domain: string;
+  description: string;
+  rasmImpact: string | null;
+  status: 'optimal' | 'opportunity' | 'constraint';
+}) {
+  const statusColor = status === 'opportunity' ? 'border-emerald-500/50 bg-emerald-900/20' :
+                      status === 'constraint' ? 'border-red-500/50 bg-red-900/20' :
+                      'border-slate-700 bg-slate-800/50';
+
+  const statusIcon = status === 'opportunity' ? '↑' :
+                     status === 'constraint' ? '⚠' : '✓';
+
+  const statusTextColor = status === 'opportunity' ? 'text-emerald-400' :
+                          status === 'constraint' ? 'text-red-400' : 'text-slate-400';
+
+  return (
+    <div className={`flex items-center gap-3 p-3 rounded-lg border ${statusColor}`}>
+      {icon}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-medium text-slate-200">{domain}</span>
+          <span className={`text-xs ${statusTextColor}`}>{statusIcon}</span>
+        </div>
+        <p className="text-xs text-slate-400 truncate">{description}</p>
+      </div>
+      {rasmImpact && (
+        <div className="text-right">
+          <span className="text-xs font-medium text-emerald-400">{rasmImpact}</span>
+          <p className="text-[10px] text-slate-500">RASM</p>
+        </div>
+      )}
     </div>
   );
 }

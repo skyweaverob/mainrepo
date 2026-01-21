@@ -1,11 +1,14 @@
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
-import { ArrowLeft, TrendingUp, TrendingDown, AlertTriangle, Calendar, Users, Plane } from 'lucide-react';
-import { formatCurrency, formatRASM, formatPassengers, formatRelativeTime } from '@/lib/formatters';
+import { ArrowLeft, TrendingUp, TrendingDown, AlertTriangle, DollarSign } from 'lucide-react';
+import { formatCurrency, formatRASM, formatRelativeTime } from '@/lib/formatters';
 import { RevenueMetricCard } from './RevenueMetricCard';
 import { LiveDot } from './LiveFeedIndicator';
+import { useLiveDataStore } from '@/lib/liveDataStore';
 import * as api from '@/lib/api';
+import * as fareService from '@/lib/fareService';
+import * as eventsService from '@/lib/eventsService';
 
 interface HubDetailViewProps {
   hubCode: string;
@@ -50,17 +53,38 @@ export function HubDetailView({
   const [loading, setLoading] = useState(true);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
 
-  // Mock hub metrics (in real app, fetch from API)
-  const hubMetrics = useMemo(() => ({
-    dailyRevenue: 2412847,
-    previousRevenue: 2314000,
-    rasmCents: 12.41,
-    previousRasm: 12.11,
-    yieldCents: 14.23,
-    previousYield: 13.43,
-    revPerDeparture: 18247,
-    previousRevPerDeparture: 17835,
-  }), []);
+  // Calculate hub metrics from actual route data
+  const hubMetrics = useMemo(() => {
+    if (routes.length === 0) {
+      return null; // No data state
+    }
+
+    const dailyRevenue = routes.reduce((sum, r) => sum + r.dailyRevenue, 0);
+    const totalDailyPax = routes.reduce((sum, r) => sum + r.dailyPassengers, 0);
+    const avgFare = routes.reduce((sum, r) => sum + r.avgFare, 0) / routes.length;
+
+    // Weighted average RASM across routes
+    const totalRevenue = routes.reduce((sum, r) => sum + r.dailyRevenue, 0);
+    const weightedRasm = routes.reduce((sum, r) => sum + (r.rasmCents * r.dailyRevenue), 0) / (totalRevenue || 1);
+
+    // Yield is typically ~14% higher than RASM for ULCC
+    const yieldCents = weightedRasm * 1.14;
+
+    // Estimate departures: assume 170 seats, 85% load factor
+    const dailyDepartures = totalDailyPax / (170 * 0.85);
+    const revPerDeparture = dailyDepartures > 0 ? dailyRevenue / dailyDepartures : 0;
+
+    return {
+      dailyRevenue,
+      previousRevenue: null, // No historical comparison without API
+      rasmCents: weightedRasm,
+      previousRasm: null,
+      yieldCents,
+      previousYield: null,
+      revPerDeparture,
+      previousRevPerDeparture: null,
+    };
+  }, [routes]);
 
   // Fetch routes for this hub
   useEffect(() => {
@@ -124,30 +148,119 @@ export function HubDetailView({
   const profitableRoutes = routes.filter((r) => r.contributionMargin > 0).slice(0, 5);
   const unprofitableRoutes = routes.filter((r) => r.contributionMargin <= 0).slice(0, 5);
 
-  // Mock demand signals
-  const demandSignals: DemandSignal[] = [
-    {
-      type: 'event',
-      icon: '🎵',
-      title: 'Concert: Beyoncé at local venue 2/28',
-      description: 'Demand lift +23% expected',
-      timestamp: new Date(Date.now() - 2 * 60 * 1000),
-    },
-    {
-      type: 'competitor',
-      icon: '✈️',
-      title: `F9 dropped fares on ${hubCode}-MCO by $28`,
-      description: 'Our fare: $127',
-      timestamp: new Date(Date.now() - 8 * 60 * 1000),
-    },
-    {
-      type: 'booking',
-      icon: '📊',
-      title: `${hubCode}-MCO Feb 14: 34% ahead of pace`,
-      description: "Valentine's weekend surge",
-      timestamp: new Date(Date.now() - 15 * 60 * 1000),
-    },
-  ];
+  // Live fares from store
+  const { liveFares, apiBudget } = useLiveDataStore();
+  const [fareSignals, setFareSignals] = useState<DemandSignal[]>([]);
+  const [eventSignals, setEventSignals] = useState<DemandSignal[]>([]);
+  const [loadingFares, setLoadingFares] = useState(false);
+  const [loadingEvents, setLoadingEvents] = useState(false);
+
+  // Fetch live fares for top routes in this hub (rate-limited)
+  useEffect(() => {
+    async function fetchLiveFaresForHub() {
+      if (routes.length === 0) return;
+
+      // Only fetch if we have budget
+      if (!fareService.hasBudget()) {
+        return;
+      }
+
+      setLoadingFares(true);
+      const signals: DemandSignal[] = [];
+
+      // Get top 3 routes by traffic for this hub
+      const topRoutes = routes.slice(0, 3);
+
+      for (const route of topRoutes) {
+        try {
+          const fareData = await fareService.fetchLiveFares(route.origin, route.destination);
+
+          if (fareData.success && fareData.minFare !== null) {
+            // Check fare positioning
+            if (fareData.nkFare !== null && fareData.fareAdvantage !== null) {
+              if (fareData.fareAdvantage < -20) {
+                // We're more expensive than market
+                signals.push({
+                  type: 'competitor',
+                  icon: '💰',
+                  title: `${route.origin}-${route.destination}: NK $${fareData.nkFare} vs market $${fareData.minFare}`,
+                  description: `$${Math.abs(fareData.fareAdvantage).toFixed(0)} above lowest competitor`,
+                  timestamp: fareData.fetchedAt,
+                });
+              } else if (fareData.fareAdvantage > 10) {
+                // We're cheaper than market
+                signals.push({
+                  type: 'competitor',
+                  icon: '✅',
+                  title: `${route.origin}-${route.destination}: Fare advantage $${fareData.fareAdvantage.toFixed(0)}`,
+                  description: `NK at $${fareData.nkFare} vs market min $${fareData.minFare}`,
+                  timestamp: fareData.fetchedAt,
+                });
+              }
+            }
+
+            // Show competitor activity
+            if (fareData.competitorFares.length > 0) {
+              const cheapest = fareData.competitorFares[0];
+              signals.push({
+                type: 'competitor',
+                icon: '✈️',
+                title: `${cheapest.airline} lowest on ${route.origin}-${route.destination}`,
+                description: `$${cheapest.minFare} (${fareData.totalOptions} total options)`,
+                timestamp: fareData.fetchedAt,
+              });
+            }
+          }
+        } catch (error) {
+          console.error('Failed to fetch fares for route:', error);
+        }
+      }
+
+      setFareSignals(signals);
+      setLoadingFares(false);
+    }
+
+    // Delay fare fetch slightly to not conflict with initial load
+    const timer = setTimeout(fetchLiveFaresForHub, 1000);
+    return () => clearTimeout(timer);
+  }, [routes]);
+
+  // Fetch events for this hub city
+  useEffect(() => {
+    async function fetchEventsForHub() {
+      if (!eventsService.hasEventsBudget()) {
+        return;
+      }
+
+      setLoadingEvents(true);
+      try {
+        const locationEvents = await eventsService.fetchEventsForAirport(hubCode);
+        const signals = eventsService.generateEventSignals(locationEvents, hubCode);
+
+        // Convert to DemandSignal format
+        const demandSignals: DemandSignal[] = signals.map(s => ({
+          type: 'event' as const,
+          icon: s.icon,
+          title: s.title,
+          description: s.description,
+          timestamp: s.timestamp,
+        }));
+
+        setEventSignals(demandSignals);
+      } catch (error) {
+        console.error('Failed to fetch events:', error);
+      } finally {
+        setLoadingEvents(false);
+      }
+    }
+
+    // Fetch events after a short delay
+    const timer = setTimeout(fetchEventsForHub, 500);
+    return () => clearTimeout(timer);
+  }, [hubCode]);
+
+  // Combine all demand signals - events first (more relevant for demand), then fares
+  const demandSignals: DemandSignal[] = [...eventSignals, ...fareSignals];
 
   return (
     <div className="h-full overflow-auto">
@@ -177,44 +290,66 @@ export function HubDetailView({
       <div className="p-4 space-y-6">
         {/* KPI Cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <RevenueMetricCard
-            title="Daily Revenue"
-            value={hubMetrics.dailyRevenue}
-            previousValue={hubMetrics.previousRevenue}
-            metricType="currency"
-            subtitle="vs last Tuesday"
-            isLive
-            lastUpdate={lastUpdate}
-          />
-          <RevenueMetricCard
-            title="RASM"
-            value={hubMetrics.rasmCents}
-            previousValue={hubMetrics.previousRasm}
-            metricType="rasm"
-            subtitle="vs last Tuesday"
-            isLive
-            lastUpdate={lastUpdate}
-            showAbsoluteDelta={false}
-          />
-          <RevenueMetricCard
-            title="Yield"
-            value={hubMetrics.yieldCents}
-            previousValue={hubMetrics.previousYield}
-            metricType="yield"
-            subtitle="vs last Tuesday"
-            isLive
-            lastUpdate={lastUpdate}
-            showAbsoluteDelta={false}
-          />
-          <RevenueMetricCard
-            title="Rev/Departure"
-            value={hubMetrics.revPerDeparture}
-            previousValue={hubMetrics.previousRevPerDeparture}
-            metricType="currency"
-            subtitle="vs last Tuesday"
-            isLive
-            lastUpdate={lastUpdate}
-          />
+          {loading ? (
+            <>
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="bg-slate-800 rounded-lg border border-slate-700 p-4 animate-pulse">
+                  <div className="h-4 bg-slate-700 rounded w-24 mb-2" />
+                  <div className="h-8 bg-slate-700 rounded w-32" />
+                </div>
+              ))}
+            </>
+          ) : !hubMetrics ? (
+            <>
+              {['Daily Revenue', 'RASM', 'Yield', 'Rev/Departure'].map((title) => (
+                <div key={title} className="bg-slate-800 rounded-lg border border-slate-700 p-4">
+                  <div className="text-xs text-slate-500 mb-1">{title}</div>
+                  <div className="text-lg font-medium text-slate-500">No data</div>
+                </div>
+              ))}
+            </>
+          ) : (
+            <>
+              <RevenueMetricCard
+                title="Daily Revenue"
+                value={hubMetrics.dailyRevenue}
+                previousValue={hubMetrics.previousRevenue}
+                metricType="currency"
+                subtitle="calculated from routes"
+                isLive
+                lastUpdate={lastUpdate}
+              />
+              <RevenueMetricCard
+                title="RASM"
+                value={hubMetrics.rasmCents}
+                previousValue={hubMetrics.previousRasm}
+                metricType="rasm"
+                subtitle="weighted avg"
+                isLive
+                lastUpdate={lastUpdate}
+                showAbsoluteDelta={false}
+              />
+              <RevenueMetricCard
+                title="Yield"
+                value={hubMetrics.yieldCents}
+                previousValue={hubMetrics.previousYield}
+                metricType="yield"
+                subtitle="estimated"
+                isLive
+                lastUpdate={lastUpdate}
+                showAbsoluteDelta={false}
+              />
+              <RevenueMetricCard
+                title="Rev/Departure"
+                value={hubMetrics.revPerDeparture}
+                previousValue={hubMetrics.previousRevPerDeparture}
+                metricType="currency"
+                subtitle="estimated"
+                isLive
+                lastUpdate={lastUpdate}
+              />
+            </>
+          )}
         </div>
 
         {/* Routes Section */}
@@ -286,30 +421,60 @@ export function HubDetailView({
           </div>
         </div>
 
-        {/* Demand Signals */}
+        {/* Demand Signals - Live from SerpAPI and Events API */}
         <div className="bg-slate-800 rounded-lg border border-slate-700 overflow-hidden">
-          <div className="px-4 py-3 border-b border-slate-700">
+          <div className="px-4 py-3 border-b border-slate-700 flex items-center justify-between">
             <h3 className="text-sm font-medium text-white flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 text-amber-400" />
+              <DollarSign className="w-4 h-4 text-emerald-400" />
               {hubCode} Demand Signals
             </h3>
+            <div className="flex items-center gap-2">
+              {(loadingFares || loadingEvents) && (
+                <span className="text-xs text-blue-400">
+                  {loadingEvents ? 'Events...' : 'Fares...'}
+                </span>
+              )}
+              <span className="text-xs text-slate-500">
+                Fares: {apiBudget.remaining}/{apiBudget.limit}
+              </span>
+            </div>
           </div>
           <div className="divide-y divide-slate-700/50">
-            {demandSignals.map((signal, i) => (
-              <div
-                key={i}
-                className="px-4 py-3 flex items-start gap-3 hover:bg-slate-700/30 transition-colors"
-              >
-                <span className="text-lg">{signal.icon}</span>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm text-white">{signal.title}</p>
-                  <p className="text-xs text-slate-400">{signal.description}</p>
-                </div>
-                <span className="text-xs text-slate-500 whitespace-nowrap">
-                  {formatRelativeTime(signal.timestamp)}
-                </span>
+            {(loadingFares && loadingEvents) ? (
+              <div className="px-4 py-6 text-center">
+                <div className="animate-spin rounded-full h-6 w-6 border-2 border-blue-500 border-t-transparent mx-auto mb-2" />
+                <div className="text-slate-500 text-sm">Fetching demand signals...</div>
               </div>
-            ))}
+            ) : demandSignals.length === 0 ? (
+              <div className="px-4 py-6 text-center">
+                <div className="text-slate-500 text-sm mb-2">
+                  {apiBudget.remaining === 0
+                    ? 'Daily API budget exhausted'
+                    : 'No demand signals for this hub'}
+                </div>
+                <p className="text-xs text-slate-600">
+                  {apiBudget.remaining === 0
+                    ? 'Budget resets at midnight. Cached data may be available.'
+                    : 'Events and fares are within normal range.'}
+                </p>
+              </div>
+            ) : (
+              demandSignals.map((signal, i) => (
+                <div
+                  key={i}
+                  className="px-4 py-3 flex items-start gap-3 hover:bg-slate-700/30 transition-colors"
+                >
+                  <span className="text-lg">{signal.icon}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-white">{signal.title}</p>
+                    <p className="text-xs text-slate-400">{signal.description}</p>
+                  </div>
+                  <span className="text-xs text-slate-500 whitespace-nowrap">
+                    {formatRelativeTime(signal.timestamp)}
+                  </span>
+                </div>
+              ))
+            )}
           </div>
         </div>
       </div>

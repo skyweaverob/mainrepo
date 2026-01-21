@@ -32,7 +32,7 @@ export function NetworkView({ initialData, onHubClick }: NetworkViewProps) {
   const [routeDecompositions, setRouteDecompositions] = useState<Record<string, any>>({});
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
 
-  const { feeds, networkHealth } = useLiveDataStore();
+  const { feeds, networkHealth, alerts, apiBudget } = useLiveDataStore();
 
   // Fetch initial data
   useEffect(() => {
@@ -108,25 +108,23 @@ export function NetworkView({ initialData, onHubClick }: NetworkViewProps) {
   // Calculate revenue metrics from market intelligence
   const revenueMetrics = useMemo(() => {
     if (marketIntelligence.length === 0) {
-      return {
-        dailyRevenue: networkHealth?.totalDailyRevenue || 13500000,
-        rasmCents: 11.84,
-        yieldCents: 13.52,
-        revPerDeparture: 18247,
-      };
+      // No data available - return null to show loading/empty state
+      return null;
     }
 
     // Calculate from actual data
     const totalAnnualPax = marketIntelligence.reduce((sum, m) => sum + (m.nk_passengers || 0), 0);
-    const avgFare = marketIntelligence.reduce((sum, m) => sum + (m.nk_avg_fare || 0), 0) / marketIntelligence.length || 120;
-    const avgDistance = marketIntelligence.reduce((sum, m) => sum + (m.distance || 0), 0) / marketIntelligence.length || 1000;
+    const avgFare = marketIntelligence.reduce((sum, m) => sum + (m.nk_avg_fare || 0), 0) / marketIntelligence.length;
+    const avgDistance = marketIntelligence.reduce((sum, m) => sum + (m.distance || 0), 0) / marketIntelligence.length;
+
+    if (!avgFare || !avgDistance) return null;
 
     const dailyPax = totalAnnualPax / 365;
     const dailyRevenue = dailyPax * avgFare;
     const rasmCents = (avgFare / avgDistance) * 100;
     const yieldCents = rasmCents * 1.14; // Yield is typically ~14% higher than RASM
     const flightsPerDay = dailyPax / (170 * 0.85); // ~170 seats, 85% load factor
-    const revPerDeparture = dailyRevenue / flightsPerDay;
+    const revPerDeparture = flightsPerDay > 0 ? dailyRevenue / flightsPerDay : 0;
 
     return {
       dailyRevenue,
@@ -134,11 +132,13 @@ export function NetworkView({ initialData, onHubClick }: NetworkViewProps) {
       yieldCents,
       revPerDeparture,
     };
-  }, [marketIntelligence, networkHealth]);
+  }, [marketIntelligence]);
 
   // Prepare hub data for map
   const hubMapData = useMemo(() => {
     const hubs = ['DTW', 'MCO', 'FLL', 'LAS', 'EWR'];
+    const RASM_ALERT_THRESHOLD = 10; // Alert if RASM below 10 cents
+
     return hubs.map(code => {
       const hubRoutes = marketIntelligence.filter(
         m => m.origin === code || m.destination === code
@@ -146,19 +146,21 @@ export function NetworkView({ initialData, onHubClick }: NetworkViewProps) {
       const totalPax = hubRoutes.reduce((sum, r) => sum + (r.nk_passengers || 0), 0);
       const avgFare = hubRoutes.length > 0
         ? hubRoutes.reduce((sum, r) => sum + (r.nk_avg_fare || 0), 0) / hubRoutes.length
-        : 120;
+        : 0;
       const avgDistance = hubRoutes.length > 0
         ? hubRoutes.reduce((sum, r) => sum + (r.distance || 0), 0) / hubRoutes.length
-        : 1000;
+        : 0;
+
+      const rasmCents = avgDistance > 0 ? (avgFare / avgDistance) * 100 : 0;
 
       return {
         code,
-        dailyRevenue: (totalPax * avgFare) / 365,
-        rasmCents: (avgFare / avgDistance) * 100,
-        isProfitable: true,
-        hasAlert: code === 'FLL', // FLL has alert per spec
+        dailyRevenue: avgFare > 0 ? (totalPax * avgFare) / 365 : 0,
+        rasmCents,
+        isProfitable: rasmCents >= RASM_ALERT_THRESHOLD,
+        hasAlert: rasmCents > 0 && rasmCents < RASM_ALERT_THRESHOLD, // Alert on low RASM, not hardcoded
         routeCount: hubRoutes.length,
-        dailyFlights: Math.round(totalPax / 365 / 150),
+        dailyFlights: totalPax > 0 ? Math.round(totalPax / 365 / 150) : 0,
       };
     });
   }, [marketIntelligence]);
@@ -232,20 +234,31 @@ export function NetworkView({ initialData, onHubClick }: NetworkViewProps) {
         </div>
       </div>
 
-      {/* Revenue Metrics - NO LOAD FACTOR */}
+      {/* Revenue Metrics - RASM is north star */}
       <div className="px-6 py-4 flex-shrink-0">
-        <RevenueMetricGrid
-          dailyRevenue={revenueMetrics.dailyRevenue}
-          rasmCents={revenueMetrics.rasmCents}
-          yieldCents={revenueMetrics.yieldCents}
-          revPerDeparture={revenueMetrics.revPerDeparture}
-          previousDailyRevenue={revenueMetrics.dailyRevenue * 0.98} // Mock 2% change
-          previousRasm={revenueMetrics.rasmCents * 0.97}
-          previousYield={revenueMetrics.yieldCents * 0.96}
-          previousRevPerDeparture={revenueMetrics.revPerDeparture * 0.98}
-          lastUpdate={lastUpdate}
-          isLive
-        />
+        {revenueMetrics ? (
+          <RevenueMetricGrid
+            dailyRevenue={revenueMetrics.dailyRevenue}
+            rasmCents={revenueMetrics.rasmCents}
+            yieldCents={revenueMetrics.yieldCents}
+            revPerDeparture={revenueMetrics.revPerDeparture}
+            previousDailyRevenue={null} // No historical comparison without API
+            previousRasm={null}
+            previousYield={null}
+            previousRevPerDeparture={null}
+            lastUpdate={lastUpdate}
+            isLive
+          />
+        ) : (
+          <div className="grid grid-cols-4 gap-4">
+            {['Daily Revenue', 'RASM', 'Yield', 'Rev/Departure'].map((title) => (
+              <div key={title} className="bg-slate-800 rounded-lg border border-slate-700 p-4">
+                <div className="text-xs text-slate-500 mb-1">{title}</div>
+                <div className="text-lg font-medium text-slate-500">Loading...</div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Map + Table Layout */}
@@ -263,36 +276,42 @@ export function NetworkView({ initialData, onHubClick }: NetworkViewProps) {
               />
             </div>
 
-            {/* Live Demand Alerts */}
+            {/* Live Fare Alerts - from SerpAPI */}
             <div className="bg-slate-800 rounded-lg border border-slate-700 overflow-hidden flex-shrink-0">
               <div className="px-4 py-3 border-b border-slate-700 flex items-center justify-between">
                 <h3 className="text-sm font-medium text-white flex items-center gap-2">
                   <Activity className="w-4 h-4 text-amber-400" />
-                  Live Demand Alerts
+                  Live Fare Alerts
                 </h3>
-                <span className="text-xs text-slate-500">Last 24 hours</span>
+                <span className="text-xs text-slate-500">
+                  API: {apiBudget.remaining}/{apiBudget.limit}
+                </span>
               </div>
               <div className="divide-y divide-slate-700/50 max-h-[200px] overflow-y-auto">
-                <AlertRow
-                  type="warning"
-                  message="FLL-BOS: Demand surge +34% (Taylor Swift concert Boston 2/14)"
-                  time="2 min ago"
-                />
-                <AlertRow
-                  type="warning"
-                  message="DTW-MCO: Competitor F9 dropped fares 18% on 3 routes"
-                  time="8 min ago"
-                />
-                <AlertRow
-                  type="info"
-                  message="LAS-LAX: Booking pace ahead of forecast +12%"
-                  time="15 min ago"
-                />
-                <AlertRow
-                  type="warning"
-                  message="EWR-MIA: Cruise departure demand spike detected"
-                  time="23 min ago"
-                />
+                {alerts.filter(a => a.type === 'competitor_fare').length === 0 ? (
+                  <div className="px-4 py-6 text-center">
+                    <div className="text-slate-500 text-sm mb-2">
+                      {apiBudget.remaining === 0 ? 'API budget exhausted' : 'No fare alerts'}
+                    </div>
+                    <p className="text-xs text-slate-600">
+                      {apiBudget.remaining > 0
+                        ? 'Fare alerts appear when competitors change prices significantly.'
+                        : 'Budget resets at midnight.'}
+                    </p>
+                  </div>
+                ) : (
+                  alerts
+                    .filter(a => a.type === 'competitor_fare')
+                    .slice(0, 5)
+                    .map((alert) => (
+                      <AlertRow
+                        key={alert.id}
+                        type={alert.severity}
+                        message={alert.message}
+                        time={formatRelativeTime(alert.timestamp)}
+                      />
+                    ))
+                )}
               </div>
             </div>
           </div>

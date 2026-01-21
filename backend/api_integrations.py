@@ -867,6 +867,240 @@ class SearchAPITrendsClient:
         }
 
 
+class GoogleEventsClient:
+    """
+    Client for Google Events via SearchAPI.io.
+    https://www.searchapi.io/docs/google-events
+
+    Uses the same API key as Google Trends.
+    """
+
+    BASE_URL = "https://www.searchapi.io/api/v1/search"
+
+    def __init__(self, api_key: str):
+        self.api_key = api_key
+
+    async def get_events(
+        self,
+        query: str,
+        location: Optional[str] = None,
+        htichips: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Get events from Google Events via SearchAPI.
+
+        Args:
+            query: Search query (e.g., "concerts in Miami")
+            location: Location string (e.g., "Miami, Florida")
+            htichips: Filter chips (e.g., "date:week" for this week)
+
+        Returns:
+            Events search results
+        """
+        if not self.api_key:
+            return {'error': 'SearchAPI key not configured', 'events': []}
+
+        params = {
+            'api_key': self.api_key,
+            'engine': 'google_events',
+            'q': query,
+        }
+
+        if location:
+            params['location'] = location
+        if htichips:
+            params['htichips'] = htichips
+
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.get(
+                    self.BASE_URL,
+                    params=params,
+                    timeout=30.0
+                )
+                response.raise_for_status()
+                data = response.json()
+
+                events = data.get('events_results', [])
+
+                return {
+                    'success': True,
+                    'query': query,
+                    'location': location,
+                    'events': events,
+                    'total_events': len(events),
+                }
+            except httpx.HTTPError as e:
+                return {'error': str(e), 'events': []}
+
+    async def get_events_for_city(
+        self,
+        city: str,
+        state: str,
+        event_type: str = "events"
+    ) -> Dict[str, Any]:
+        """
+        Get events for a specific city.
+
+        Args:
+            city: City name (e.g., "Miami")
+            state: State name (e.g., "Florida")
+            event_type: Type of events (concerts, sports, events)
+
+        Returns:
+            Events for the city with demand impact estimates
+        """
+        location = f"{city}, {state}, USA"
+
+        # Build search query based on event type
+        if event_type == "concerts":
+            query = f"concerts in {city}"
+        elif event_type == "sports":
+            query = f"sports events in {city}"
+        else:
+            query = f"events in {city}"
+
+        result = await self.get_events(query, location=location, htichips="date:month")
+
+        if not result.get('success'):
+            return result
+
+        # Enrich with demand impact estimates
+        events = result.get('events', [])
+        enriched_events = []
+
+        for event in events:
+            impact = self._estimate_demand_impact(event)
+            enriched_events.append({
+                **event,
+                'demand_impact': impact,
+            })
+
+        # Sort by demand impact (high first)
+        impact_order = {'high': 0, 'medium': 1, 'low': 2}
+        enriched_events.sort(key=lambda e: impact_order.get(e['demand_impact'], 3))
+
+        return {
+            'success': True,
+            'city': city,
+            'state': state,
+            'location': location,
+            'events': enriched_events,
+            'total_events': len(enriched_events),
+            'high_impact_count': sum(1 for e in enriched_events if e['demand_impact'] == 'high'),
+            'medium_impact_count': sum(1 for e in enriched_events if e['demand_impact'] == 'medium'),
+        }
+
+    def _estimate_demand_impact(self, event: Dict) -> str:
+        """Estimate demand impact based on event characteristics."""
+        title = event.get('title', '').lower()
+        venue_name = event.get('venue', {}).get('name', '').lower() if isinstance(event.get('venue'), dict) else ''
+        venue_reviews = event.get('venue', {}).get('reviews', 0) if isinstance(event.get('venue'), dict) else 0
+
+        # High-impact: Major artists, stadium shows, big sports
+        high_impact_keywords = [
+            'taylor swift', 'beyoncé', 'beyonce', 'drake', 'bad bunny', 'ed sheeran',
+            'super bowl', 'world series', 'nfl', 'nba finals', 'world cup',
+            'formula 1', 'f1', 'ufc', 'wrestlemania',
+            'coachella', 'lollapalooza', 'burning man', 'ultra music festival',
+            'rolling loud', 'music festival',
+        ]
+
+        for keyword in high_impact_keywords:
+            if keyword in title or keyword in venue_name:
+                return 'high'
+
+        # Stadium/arena shows are typically high impact
+        stadium_keywords = ['stadium', 'arena', 'center', 'centre', 'dome', 'coliseum', 'amphitheatre']
+        for keyword in stadium_keywords:
+            if keyword in venue_name and venue_reviews > 1000:
+                return 'high'
+
+        # Medium impact: Popular venues, known event types
+        medium_impact_keywords = [
+            'concert', 'tour', 'live', 'festival', 'championship', 'playoff',
+            'convention', 'expo', 'comic con', 'marathon', 'game',
+        ]
+
+        for keyword in medium_impact_keywords:
+            if keyword in title:
+                return 'medium'
+
+        # Venue with lots of reviews suggests popularity
+        if venue_reviews > 500:
+            return 'medium'
+
+        return 'low'
+
+    async def get_high_impact_events(
+        self,
+        cities: List[str]
+    ) -> Dict[str, Any]:
+        """
+        Get high-impact events across multiple cities.
+
+        Args:
+            cities: List of city names
+
+        Returns:
+            High-impact events organized by city
+        """
+        # Map cities to states (common airline destinations)
+        city_states = {
+            'Miami': 'Florida',
+            'Fort Lauderdale': 'Florida',
+            'Orlando': 'Florida',
+            'Las Vegas': 'Nevada',
+            'Los Angeles': 'California',
+            'New York': 'New York',
+            'Chicago': 'Illinois',
+            'Atlanta': 'Georgia',
+            'Dallas': 'Texas',
+            'Denver': 'Colorado',
+            'Detroit': 'Michigan',
+            'Boston': 'Massachusetts',
+            'Seattle': 'Washington',
+            'Phoenix': 'Arizona',
+            'San Francisco': 'California',
+        }
+
+        tasks = []
+        for city in cities:
+            state = city_states.get(city, '')
+            if state:
+                tasks.append(self.get_events_for_city(city, state))
+
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        all_high_impact = []
+        by_city = {}
+
+        for i, result in enumerate(results):
+            city = cities[i]
+            if isinstance(result, Exception):
+                by_city[city] = {'error': str(result), 'events': []}
+                continue
+            if not result.get('success'):
+                by_city[city] = result
+                continue
+
+            by_city[city] = result
+            # Collect high-impact events
+            for event in result.get('events', []):
+                if event.get('demand_impact') == 'high':
+                    all_high_impact.append({
+                        'city': city,
+                        **event,
+                    })
+
+        return {
+            'success': True,
+            'by_city': by_city,
+            'all_high_impact': all_high_impact,
+            'total_high_impact': len(all_high_impact),
+        }
+
+
 class ExternalDataService:
     """
     Unified service for all external data integrations.
@@ -880,6 +1114,7 @@ class ExternalDataService:
         self.serp = SerpAPIClient(config.serp_api_key)
         self.weather = OpenWeatherClient(config.openweathermap_key)
         self.trends = SearchAPITrendsClient(config.searchapi_key)
+        self.events = GoogleEventsClient(config.searchapi_key)
 
     async def get_route_intelligence(
         self,

@@ -10,7 +10,7 @@ type MetricType = 'currency' | 'rasm' | 'yield' | 'percentage' | 'count';
 interface RevenueMetricCardProps {
   title: string;
   value: number;
-  previousValue?: number;
+  previousValue?: number | null;
   metricType?: MetricType;
   subtitle?: string;
   icon?: LucideIcon;
@@ -45,9 +45,9 @@ export function RevenueMetricCard({
   onClick,
   className = '',
 }: RevenueMetricCardProps) {
-  // Calculate delta
+  // Calculate delta - only if we have valid historical data
   const delta = useMemo(() => {
-    if (previousValue === undefined || previousValue === 0) return null;
+    if (previousValue === undefined || previousValue === null || previousValue === 0) return null;
     return {
       absolute: value - previousValue,
       percentage: ((value - previousValue) / Math.abs(previousValue)) * 100,
@@ -231,6 +231,7 @@ export function RevenueMetricRow({
 
 /**
  * RevenueMetricGrid - 4-card grid layout for key metrics
+ * RASM is the north star metric - shown first and larger
  */
 export function RevenueMetricGrid({
   dailyRevenue,
@@ -248,33 +249,47 @@ export function RevenueMetricGrid({
   rasmCents: number;
   yieldCents: number;
   revPerDeparture: number;
-  previousDailyRevenue?: number;
-  previousRasm?: number;
-  previousYield?: number;
-  previousRevPerDeparture?: number;
+  previousDailyRevenue?: number | null;
+  previousRasm?: number | null;
+  previousYield?: number | null;
+  previousRevPerDeparture?: number | null;
   lastUpdate?: Date | null;
   isLive?: boolean;
 }) {
+  const hasHistoricalData = previousDailyRevenue !== null && previousDailyRevenue !== undefined;
+
+  // Determine RASM health for styling
+  const rasmHealth = rasmCents >= 12 ? 'healthy' : rasmCents >= 10 ? 'warning' : 'critical';
+  const rasmBorderClass = rasmHealth === 'healthy'
+    ? 'border-emerald-500/50'
+    : rasmHealth === 'warning'
+    ? 'border-amber-500/50'
+    : 'border-red-500/50';
+
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* RASM - North Star Metric - highlighted with border */}
+      <div className={`rounded-lg border-2 ${rasmBorderClass}`}>
+        <RevenueMetricCard
+          title="RASM"
+          value={rasmCents}
+          previousValue={previousRasm}
+          metricType="rasm"
+          subtitle="North Star Metric"
+          isLive={isLive}
+          lastUpdate={lastUpdate}
+          showAbsoluteDelta={false}
+          className="border-0"
+        />
+      </div>
       <RevenueMetricCard
         title="Daily Revenue"
         value={dailyRevenue}
         previousValue={previousDailyRevenue}
         metricType="currency"
-        subtitle="vs same day last week"
+        subtitle={hasHistoricalData ? "vs same day last week" : "calculated from routes"}
         isLive={isLive}
         lastUpdate={lastUpdate}
-      />
-      <RevenueMetricCard
-        title="RASM"
-        value={rasmCents}
-        previousValue={previousRasm}
-        metricType="rasm"
-        subtitle="Revenue per ASM"
-        isLive={isLive}
-        lastUpdate={lastUpdate}
-        showAbsoluteDelta={false}
       />
       <RevenueMetricCard
         title="Yield"

@@ -653,6 +653,14 @@ export async function getBookingCurve(origin: string, destination: string) {
 }
 
 // Route P&L
-export async function getRoutePnL(origin: string, destination: string) {
+export async function getRoutePnl(origin: string, destination: string) {
   return fetchAPI<RoutePnL>(`/api/route-pnl/${origin}/${destination}`);
+}
+
+// Alias for backwards compatibility
+export const getRoutePnL = getRoutePnl;
+
+// Market Intelligence Detail - wrapper around getSingleMarketIntelligence
+export async function getMarketIntelligenceDetail(marketKey: string) {
+  return getSingleMarketIntelligence(marketKey).catch(() => null);
 }

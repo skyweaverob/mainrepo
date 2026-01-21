@@ -1005,6 +1005,56 @@ async def get_live_route_intelligence(
     return result
 
 
+# ==================== Google Events Endpoints ====================
+
+@app.get("/api/live/events/{airport_code}")
+async def get_events_for_airport(
+    airport_code: str,
+    city: str = Query(..., description="City name (e.g., Miami)"),
+    state: str = Query(..., description="State name (e.g., Florida)"),
+    event_type: str = Query("events", enum=["events", "concerts", "sports"])
+):
+    """
+    Get events for a city/airport location via Google Events API.
+
+    This powers demand signals for route analysis.
+    """
+    service = get_external_service()
+    result = await service.events.get_events_for_city(city, state, event_type)
+    return result
+
+
+@app.get("/api/live/events/search")
+async def search_events(
+    query: str = Query(..., description="Search query (e.g., 'Taylor Swift Miami')"),
+    location: Optional[str] = Query(None, description="Location (e.g., 'Miami, Florida')")
+):
+    """
+    Search for specific events using Google Events API.
+    """
+    service = get_external_service()
+    result = await service.events.get_events(query, location=location)
+    return result
+
+
+@app.get("/api/live/events/high-impact")
+async def get_high_impact_events(
+    cities: str = Query(..., description="Comma-separated city names (e.g., 'Miami,Orlando,Las Vegas')")
+):
+    """
+    Get high-impact events across multiple cities.
+
+    Useful for network-wide demand forecasting.
+    """
+    city_list = [c.strip() for c in cities.split(',')]
+    if len(city_list) > 10:
+        raise HTTPException(status_code=400, detail="Maximum 10 cities per request")
+
+    service = get_external_service()
+    result = await service.events.get_high_impact_events(city_list)
+    return result
+
+
 # ==================== Google Trends Endpoints ====================
 
 @app.get("/api/trends/destination/{destination}")
