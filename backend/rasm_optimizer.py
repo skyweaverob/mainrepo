@@ -89,17 +89,26 @@ class OptimizationResult:
 # STAGE-LENGTH ADJUSTED CASM
 # =============================================================================
 
-def calculate_stage_length_casm(distance_nm: float, base_casm: float = 8.0) -> float:
+def calculate_stage_length_casm(distance_nm: float, base_casm: float = 10.5) -> float:
     """
     Calculate stage-length adjusted CASM.
+
+    Based on Spirit Airlines 2024 actuals:
+    - Total CASM: 11.35¢ (all-in including fuel)
+    - Ex-fuel CASM: 7.97¢
+    - Average stage length: ~1,000nm
 
     Shorter flights have higher CASM due to:
     - Fixed costs (landing fees, ground handling) spread over fewer ASMs
     - Less efficient fuel burn (climb/descent vs cruise)
     - Higher crew costs per ASM
 
-    Formula based on industry standard regression:
-    CASM = base_casm * (1 + k / sqrt(distance))
+    Formula: CASM = base + (fixed_penalty / distance)
+    Calibrated to give:
+    - 500nm: ~12.5¢
+    - 1000nm: ~11.5¢
+    - 1500nm: ~11¢
+    - 2000nm: ~10.75¢
 
     Args:
         distance_nm: Stage length in nautical miles
@@ -109,14 +118,15 @@ def calculate_stage_length_casm(distance_nm: float, base_casm: float = 8.0) -> f
         Stage-adjusted CASM in cents
     """
     if distance_nm <= 0:
-        return base_casm * 2  # Default high cost for invalid distance
+        return 15.0  # High cost for invalid distance
 
-    # Industry coefficient - calibrated to Spirit's cost structure
-    # At 500nm: ~1.3x base, at 1000nm: ~1.2x base, at 2000nm: ~1.1x base
-    k = 150
+    # Fixed cost penalty per flight spread over distance
+    # ~$2,000 in fixed costs / 182 seats = ~$11 per seat per flight
+    # At 500nm: $11 / 500 * 100 = 2.2¢ per ASM penalty
+    fixed_penalty_per_asm = 1000  # Calibration factor (nm * cents)
 
-    adjustment = 1 + k / np.sqrt(distance_nm)
-    return base_casm * adjustment
+    stage_adjustment = fixed_penalty_per_asm / distance_nm
+    return base_casm + stage_adjustment
 
 
 def calculate_block_hours(distance_nm: float, aircraft_type: str = 'A320neo') -> float:

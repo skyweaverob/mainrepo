@@ -36,9 +36,9 @@ interface AppState {
   error: string | null;
   setError: (error: string | null) => void;
 
-  // Active view
-  activeView: 'network' | 'route' | 'fleet' | 'crew' | 'mro' | 'scenarios' | 'intelligence' | 'booking' | 'tradeoffs' | 'crossdomain';
-  setActiveView: (view: 'network' | 'route' | 'fleet' | 'crew' | 'mro' | 'scenarios' | 'intelligence' | 'booking' | 'tradeoffs' | 'crossdomain') => void;
+  // Active view - simplified to 4 main tabs + legacy support
+  activeView: 'network' | 'tradeoffs' | 'operations' | 'analytics' | 'route' | 'fleet' | 'crew' | 'mro' | 'scenarios' | 'intelligence' | 'booking' | 'crossdomain';
+  setActiveView: (view: 'network' | 'tradeoffs' | 'operations' | 'analytics' | 'route' | 'fleet' | 'crew' | 'mro' | 'scenarios' | 'intelligence' | 'booking' | 'crossdomain') => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
