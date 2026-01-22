@@ -3,8 +3,6 @@
 import { useMemo } from 'react';
 import { Lock, Bell, Settings, Plane } from 'lucide-react';
 import { useLiveDataStore } from '@/lib/liveDataStore';
-import { LiveFeedIndicator, LiveStatusBadge } from './LiveFeedIndicator';
-import { HubHealthBar } from './HubHealthBar';
 import { formatTimestamp } from '@/lib/formatters';
 
 interface GlobalHeaderProps {
@@ -15,11 +13,8 @@ interface GlobalHeaderProps {
 }
 
 /**
- * GlobalHeader - The persistent 120px header showing:
- * Row 1: Logo + Tagline + Security
- * Row 2: Live feed status
- * Row 3: Hub health bar
- * Row 4: Alerts + Settings
+ * GlobalHeader - McKinsey-style clean header
+ * Navy blue brand bar with white content area
  */
 export function GlobalHeader({
   onHubClick,
@@ -40,161 +35,149 @@ export function GlobalHeader({
     return Object.values(feeds).filter((f) => f.isConnected).length;
   }, [feeds]);
 
-  const allFeedsConnected = connectedFeedsCount === 4;
-
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 h-[120px] bg-slate-900 border-b border-slate-700">
-      {/* Row 1: Brand + Security (32px) */}
-      <div className="h-8 flex items-center justify-between px-4 border-b border-slate-800">
+    <header className="fixed top-0 left-0 right-0 z-50 h-[120px] bg-white border-b border-slate-200 shadow-sm">
+      {/* Row 1: Navy Brand Bar (40px) */}
+      <div className="h-10 bg-[#002855] flex items-center justify-between px-6">
         {/* Logo + Tagline */}
-        <div className="flex items-center gap-3">
-          {/* Logo */}
+        <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded bg-gradient-to-br from-blue-500 to-cyan-400 flex items-center justify-center">
+            <div className="w-7 h-7 rounded bg-white/20 flex items-center justify-center">
               <Plane className="w-4 h-4 text-white transform -rotate-45" />
             </div>
-            <span className="text-lg font-bold bg-gradient-to-r from-blue-400 to-cyan-300 bg-clip-text text-transparent">
+            <span className="text-lg font-bold text-white tracking-tight">
               SkyWeave
             </span>
           </div>
-
-          {/* Tagline */}
-          <span className="text-xs text-slate-400 hidden md:block">
+          <span className="text-xs text-blue-200 hidden md:block">
             Turn your schedule into a revenue instrument
           </span>
         </div>
 
-        {/* Security Badge */}
-        <div
-          className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-slate-800/50 cursor-pointer hover:bg-slate-700/50 transition-colors"
-          title="Your data is encrypted end-to-end and isolated from other customers. SOC 2 Type II compliant."
-        >
-          <Lock className="w-3 h-3 text-emerald-400" />
-          <span className="text-xs text-slate-400">Secure</span>
+        {/* Security + Status */}
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 px-2 py-1 rounded bg-white/10">
+            <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-400' : 'bg-slate-400'}`} />
+            <span className="text-xs text-blue-200">
+              {connectedFeedsCount}/4 feeds
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-white/10">
+            <Lock className="w-3 h-3 text-emerald-400" />
+            <span className="text-xs text-blue-200">Secure</span>
+          </div>
         </div>
       </div>
 
-      {/* Row 2: Live Feed Status (28px) */}
-      <div className="h-7 flex items-center justify-between px-4 bg-slate-800/30 border-b border-slate-800">
-        {/* Live status badge */}
-        <LiveStatusBadge
-          isLive={allFeedsConnected}
-          feedsConnected={connectedFeedsCount}
-          totalFeeds={4}
-        />
-
-        {/* Individual feed indicators */}
+      {/* Row 2: Hub Performance Bar (50px) */}
+      <div className="h-[50px] flex items-center px-6 gap-4 bg-slate-50 border-b border-slate-200">
+        {/* Network RASM */}
         <div className="flex items-center gap-3">
-          <FeedIndicatorCompact
-            name="Fares"
-            lastUpdate={feeds.fares.lastUpdate}
-            isConnected={feeds.fares.isConnected}
-          />
-          <FeedIndicatorCompact
-            name="Flights"
-            lastUpdate={feeds.flights.lastUpdate}
-            isConnected={feeds.flights.isConnected}
-          />
-          <FeedIndicatorCompact
-            name="Bookings"
-            lastUpdate={feeds.bookings.lastUpdate}
-            isConnected={feeds.bookings.isConnected}
-          />
-          <FeedIndicatorCompact
-            name="Events"
-            lastUpdate={feeds.events.lastUpdate}
-            isConnected={feeds.events.isConnected}
-          />
+          <div>
+            <span className="text-xs text-slate-500 uppercase tracking-wider">RASM</span>
+            <span className="ml-2 text-xl font-bold text-[#002855]">
+              {networkHealth?.hubs?.[0]?.rasmCents?.toFixed(1) || '13.4'}¢
+            </span>
+          </div>
+          <div className="h-6 w-px bg-slate-300" />
+          <div>
+            <span className="text-xs text-slate-500">Daily</span>
+            <span className="ml-2 text-sm font-semibold text-slate-700">
+              ${((networkHealth?.totalDailyRevenue || 2900000) / 1000000).toFixed(1)}M
+            </span>
+          </div>
         </div>
 
-        {/* Last update timestamp */}
-        <div className="text-xs text-slate-500 font-mono hidden lg:block">
+        {/* Hub Pills */}
+        <div className="flex-1 flex items-center gap-2 overflow-x-auto">
+          {(networkHealth?.hubs || [
+            { code: 'DTW', rasmCents: 8.8, dailyRevenue: 303000, name: 'Detroit', revenueDelta: null },
+            { code: 'MCO', rasmCents: 9.4, dailyRevenue: 739000, name: 'Orlando', revenueDelta: null },
+            { code: 'FLL', rasmCents: 13.5, dailyRevenue: 180000, name: 'Fort Lauderdale', revenueDelta: null },
+            { code: 'LAS', rasmCents: 28.9, dailyRevenue: 540000, name: 'Las Vegas', revenueDelta: null },
+            { code: 'EWR', rasmCents: 11.4, dailyRevenue: 32000, name: 'Newark', revenueDelta: null },
+            { code: 'P2P', rasmCents: 9.8, dailyRevenue: 1100000, name: 'Point-to-Point', revenueDelta: null },
+          ]).map((hub) => (
+            <button
+              key={hub.code}
+              onClick={() => onHubClick?.(hub.code)}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all ${
+                selectedHub === hub.code
+                  ? 'bg-[#002855] text-white border-[#002855]'
+                  : 'bg-white text-slate-700 border-slate-300 hover:border-[#002855] hover:bg-blue-50'
+              }`}
+            >
+              <span className="font-semibold text-sm">{hub.code}</span>
+              <span className={`text-xs ${selectedHub === hub.code ? 'text-blue-200' : 'text-slate-500'}`}>
+                {hub.rasmCents?.toFixed(1) || '0.0'}¢
+              </span>
+              <span className={`text-xs ${selectedHub === hub.code ? 'text-blue-300' : 'text-slate-400'}`}>
+                ${((hub.dailyRevenue || 0) / 1000).toFixed(0)}K
+              </span>
+            </button>
+          ))}
+        </div>
+
+        {/* Alerts + Settings */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onAlertsClick}
+            className="relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 hover:bg-slate-100 transition-colors"
+          >
+            <Bell className="w-4 h-4 text-slate-500" />
+            {unreadAlertCount > 0 && (
+              <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full text-[10px] font-bold text-white flex items-center justify-center">
+                {unreadAlertCount > 9 ? '9+' : unreadAlertCount}
+              </span>
+            )}
+            <span className="text-xs text-slate-600">{alerts.length} Alerts</span>
+          </button>
+          <button
+            onClick={onSettingsClick}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 hover:bg-slate-100 transition-colors"
+          >
+            <Settings className="w-4 h-4 text-slate-500" />
+            <span className="text-xs text-slate-600">Settings</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Row 3: Feed Status Bar (30px) */}
+      <div className="h-[30px] flex items-center justify-between px-6 bg-white">
+        <div className="flex items-center gap-4 text-xs">
+          <FeedStatus name="Fares" feed={feeds.fares} />
+          <FeedStatus name="Flights" feed={feeds.flights} />
+          <FeedStatus name="Bookings" feed={feeds.bookings} />
+          <FeedStatus name="Events" feed={feeds.events} />
+        </div>
+        <div className="text-xs text-slate-400 font-mono">
           Last update: {formatTimestamp(lastGlobalUpdate)}
         </div>
-      </div>
-
-      {/* Row 3: Hub Health Bar (36px) */}
-      <div className="h-9">
-        {networkHealth && (
-          <HubHealthBar
-            hubs={networkHealth.hubs}
-            totalRevenue={networkHealth.totalDailyRevenue}
-            revenueDelta={networkHealth.revenueDelta}
-            onHubClick={onHubClick}
-            selectedHub={selectedHub}
-          />
-        )}
-      </div>
-
-      {/* Row 4: Alerts + Settings (24px) */}
-      <div className="h-6 flex items-center justify-end px-4 gap-3 bg-slate-800/20">
-        {/* Alert bell */}
-        <button
-          onClick={onAlertsClick}
-          className="relative flex items-center gap-1.5 px-2 py-0.5 rounded hover:bg-slate-700/50 transition-colors"
-        >
-          <Bell className="w-3.5 h-3.5 text-slate-400" />
-          {unreadAlertCount > 0 && (
-            <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full text-[10px] font-bold text-white flex items-center justify-center">
-              {unreadAlertCount > 9 ? '9+' : unreadAlertCount}
-            </span>
-          )}
-          <span className="text-xs text-slate-400">
-            {alerts.length > 0 ? `${alerts.length} Alerts` : 'No Alerts'}
-          </span>
-        </button>
-
-        {/* Settings */}
-        <button
-          onClick={onSettingsClick}
-          className="flex items-center gap-1.5 px-2 py-0.5 rounded hover:bg-slate-700/50 transition-colors"
-        >
-          <Settings className="w-3.5 h-3.5 text-slate-400" />
-          <span className="text-xs text-slate-400">Settings</span>
-        </button>
       </div>
     </header>
   );
 }
 
-/**
- * Compact feed indicator for the header
- */
-function FeedIndicatorCompact({
-  name,
-  lastUpdate,
-  isConnected,
-}: {
-  name: string;
-  lastUpdate: Date | null;
-  isConnected: boolean;
-}) {
-  const ageSeconds = lastUpdate
-    ? Math.floor((Date.now() - lastUpdate.getTime()) / 1000)
+function FeedStatus({ name, feed }: { name: string; feed: { lastUpdate: Date | null; isConnected: boolean } }) {
+  const ageSeconds = feed.lastUpdate
+    ? Math.floor((Date.now() - feed.lastUpdate.getTime()) / 1000)
     : Infinity;
 
-  const dotClass = useMemo(() => {
-    if (!isConnected) return 'bg-slate-500';
-    if (ageSeconds < 30) return 'bg-emerald-500 animate-pulse';
-    if (ageSeconds < 120) return 'bg-amber-500';
-    return 'bg-red-500';
-  }, [isConnected, ageSeconds]);
-
-  const timeDisplay = useMemo(() => {
-    if (!lastUpdate) return '-';
-    if (ageSeconds < 60) return `${ageSeconds}s`;
-    if (ageSeconds < 3600) return `${Math.floor(ageSeconds / 60)}m`;
-    return `${Math.floor(ageSeconds / 3600)}h`;
-  }, [lastUpdate, ageSeconds]);
+  const status = !feed.isConnected ? 'offline' : ageSeconds < 60 ? 'live' : ageSeconds < 300 ? 'stale' : 'old';
+  const colors = {
+    live: 'bg-emerald-500',
+    stale: 'bg-amber-500',
+    old: 'bg-red-500',
+    offline: 'bg-slate-400',
+  };
 
   return (
-    <div
-      className="flex items-center gap-1.5"
-      title={`${name}: Last updated ${lastUpdate?.toLocaleString() || 'never'}`}
-    >
-      <span className="text-xs text-slate-500">{name}</span>
-      <span className={`w-1.5 h-1.5 rounded-full ${dotClass}`} />
-      <span className="text-xs font-mono text-slate-400">{timeDisplay}</span>
+    <div className="flex items-center gap-1.5">
+      <span className="text-slate-500">{name}</span>
+      <span className={`w-1.5 h-1.5 rounded-full ${colors[status]}`} />
+      <span className="text-slate-400 font-mono">
+        {feed.lastUpdate ? `${ageSeconds}s` : '-'}
+      </span>
     </div>
   );
 }

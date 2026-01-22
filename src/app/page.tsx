@@ -203,11 +203,11 @@ export default function Home() {
 
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-slate-900">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-2 border-blue-500 border-t-transparent mx-auto mb-4" />
-          <p className="text-slate-400">Connecting to SkyWeave...</p>
-          <p className="text-xs text-slate-600 mt-2">
+      <div className="flex h-screen items-center justify-center bg-slate-100">
+        <div className="text-center bg-white p-8 rounded-lg shadow-lg">
+          <div className="animate-spin rounded-full h-12 w-12 border-2 border-[#002855] border-t-transparent mx-auto mb-4" />
+          <p className="text-slate-700 font-semibold">Connecting to SkyWeave...</p>
+          <p className="text-xs text-slate-500 mt-2">
             Turn your schedule into a revenue instrument
           </p>
         </div>
@@ -217,18 +217,18 @@ export default function Home() {
 
   if (error) {
     return (
-      <div className="flex h-screen items-center justify-center bg-slate-900">
-        <div className="text-center max-w-md p-6">
-          <div className="w-16 h-16 rounded-full bg-red-900/20 flex items-center justify-center mx-auto mb-4">
-            <svg className="w-8 h-8 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <div className="flex h-screen items-center justify-center bg-slate-100">
+        <div className="text-center max-w-md bg-white p-8 rounded-lg shadow-lg">
+          <div className="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-4">
+            <svg className="w-8 h-8 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
             </svg>
           </div>
-          <h2 className="text-xl font-semibold text-slate-100 mb-2">Connection Error</h2>
-          <p className="text-slate-400 mb-6">{error}</p>
-          <div className="text-left bg-slate-800 rounded-lg p-4 text-sm">
-            <p className="text-slate-300 mb-2">To start the backend server:</p>
-            <code className="block text-blue-400 font-mono text-xs p-2 bg-slate-900 rounded">
+          <h2 className="text-xl font-semibold text-slate-800 mb-2">Connection Error</h2>
+          <p className="text-slate-600 mb-6">{error}</p>
+          <div className="text-left bg-slate-50 rounded-lg p-4 text-sm border border-slate-200">
+            <p className="text-slate-700 mb-2">To start the backend server:</p>
+            <code className="block text-[#002855] font-mono text-xs p-2 bg-white rounded border border-slate-200">
               cd skyweave/backend<br />
               source venv/bin/activate<br />
               uvicorn main:app --reload --port 8000
@@ -236,7 +236,7 @@ export default function Home() {
           </div>
           <button
             onClick={() => window.location.reload()}
-            className="mt-6 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            className="mt-6 px-4 py-2 bg-[#002855] text-white rounded-lg hover:bg-[#001a3d] transition-colors"
           >
             Retry Connection
           </button>
@@ -246,7 +246,7 @@ export default function Home() {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-slate-900">
+    <div className="flex flex-col h-screen bg-slate-100">
       {/* Global Header (120px) */}
       <GlobalHeader
         onHubClick={handleHubClick}
@@ -259,7 +259,7 @@ export default function Home() {
       {/* Main content area below header */}
       <div className="flex flex-1 pt-[120px] overflow-hidden">
         <Sidebar dataStatus={dataStatus} />
-        <main className="flex-1 overflow-hidden">
+        <main className="flex-1 overflow-hidden bg-slate-100">
           {renderView()}
         </main>
       </div>
