@@ -16,6 +16,9 @@ import { HubDetailView } from '@/components/HubDetailView';
 import { OptimizationDemo } from '@/components/OptimizationDemo';
 import { CrossDomainInsights } from '@/components/CrossDomainInsights';
 import { ControlRoom } from '@/components/os/ControlRoom';
+import { DemoView } from '@/components/DemoView';
+import { DataView } from '@/components/DataView';
+import { SimulateView } from '@/components/SimulateView';
 import { useAppStore } from '@/lib/store';
 import { useLiveDataStore } from '@/lib/liveDataStore';
 import { useLiveData } from '@/hooks/useLiveData';
@@ -95,11 +98,23 @@ export default function Home() {
     }
 
     switch (activeView) {
+      // Demo Mode - VC/Board presentation
+      case 'demo':
+        return <DemoView />;
+
       // OS-style Control Room - Primary Decision Interface
       case 'controlroom':
         return <ControlRoom onHubClick={handleHubClick} />;
 
-      // Main 4 tabs
+      // Simulate - What-if scenario analysis
+      case 'simulate':
+        return <SimulateView />;
+
+      // Data - Data health and platform status
+      case 'data':
+        return <DataView />;
+
+      // Legacy views for backwards compatibility
       case 'network':
         return <NetworkView onHubClick={handleHubClick} />;
 

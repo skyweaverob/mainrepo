@@ -69,22 +69,66 @@ export function GlobalHeader({
         </div>
       </div>
 
-      {/* Row 2: Hub Performance Bar (50px) */}
-      <div className="h-[50px] flex items-center px-6 gap-4 bg-slate-50 border-b border-slate-200">
-        {/* Network RASM */}
-        <div className="flex items-center gap-3">
-          <div>
-            <span className="text-xs text-slate-500 uppercase tracking-wider">RASM</span>
-            <span className="ml-2 text-xl font-bold text-[#002855]">
-              {networkHealth?.hubs?.[0]?.rasmCents?.toFixed(1) || '13.4'}¢
-            </span>
+      {/* Row 2: RASM Hero Bar (50px) - RASM is the hero metric per spec */}
+      <div className="h-[50px] flex items-center px-6 gap-4 bg-gradient-to-r from-slate-50 to-white border-b border-slate-200">
+        {/* RASM Hero - Largest, leftmost, most prominent */}
+        <div className="flex items-center gap-4 bg-white px-4 py-1 rounded-lg border border-slate-200 shadow-sm">
+          <div className="flex flex-col">
+            <span className="text-[10px] text-slate-500 uppercase tracking-wider font-medium">Network RASM</span>
+            <div className="flex items-baseline gap-2">
+              <span className="text-2xl font-bold text-[#002855]">
+                {networkHealth?.hubs?.[0]?.rasmCents?.toFixed(2) || '8.41'}¢
+              </span>
+              <span className="text-sm font-semibold text-emerald-600 flex items-center gap-0.5">
+                <span className="text-xs">+9.0%</span>
+              </span>
+            </div>
           </div>
-          <div className="h-6 w-px bg-slate-300" />
+          <div className="h-8 w-px bg-slate-200" />
+          <div className="flex flex-col">
+            <span className="text-[10px] text-slate-500">vs target</span>
+            <span className="text-sm font-medium text-slate-600">8.50¢</span>
+          </div>
+          {/* RASM progress bar */}
+          <div className="w-24">
+            <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden">
+              <div className="h-full bg-emerald-500 rounded-full" style={{ width: '94%' }} />
+            </div>
+          </div>
+        </div>
+
+        <div className="h-6 w-px bg-slate-300" />
+
+        {/* Secondary metrics */}
+        <div className="flex items-center gap-4">
           <div>
-            <span className="text-xs text-slate-500">Daily</span>
-            <span className="ml-2 text-sm font-semibold text-slate-700">
-              ${((networkHealth?.totalDailyRevenue || 2900000) / 1000000).toFixed(1)}M
-            </span>
+            <span className="text-[10px] text-slate-500 uppercase">Revenue</span>
+            <div className="text-sm font-semibold text-slate-700">
+              ${((networkHealth?.totalDailyRevenue || 3380000) / 1000000).toFixed(1)}M/day
+            </div>
+          </div>
+          <div>
+            <span className="text-[10px] text-slate-500 uppercase">Confidence</span>
+            <div className="text-sm font-semibold text-slate-700">94%</div>
+          </div>
+          <div>
+            <span className="text-[10px] text-slate-500 uppercase">Risk</span>
+            <div className="flex items-center gap-1">
+              <div className="flex gap-0.5">
+                <div className="w-2 h-3 bg-emerald-500 rounded-sm" />
+                <div className="w-2 h-3 bg-emerald-500 rounded-sm" />
+                <div className="w-2 h-3 bg-amber-400 rounded-sm" />
+                <div className="w-2 h-3 bg-slate-200 rounded-sm" />
+              </div>
+              <span className="text-sm font-semibold text-amber-600">Med</span>
+            </div>
+          </div>
+          <div>
+            <span className="text-[10px] text-slate-500 uppercase">Data</span>
+            <div className="flex items-center gap-1">
+              <div className="w-2 h-2 rounded-full bg-emerald-500" />
+              <span className="text-sm font-semibold text-emerald-600">Healthy</span>
+            </div>
           </div>
         </div>
 

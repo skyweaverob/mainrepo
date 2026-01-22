@@ -1,27 +1,35 @@
 'use client';
 
 import {
-  Network,
+  Presentation,
+  Target,
   Cpu,
   Settings2,
-  BarChart3,
+  FlaskConical,
   Database,
   Shield,
   ChevronRight,
-  Target,
 } from 'lucide-react';
 import { useAppStore } from '@/lib/store';
 import { useLiveDataStore } from '@/lib/liveDataStore';
 
 /**
- * SkyWeave Sidebar - McKinsey-style clean navigation
+ * SkyWeave Sidebar - 6 primary navigation items per spec
+ *
+ * 1. Demo - VC/Board view (investment presentation)
+ * 2. Control Room - Primary operational workspace
+ * 3. Optimize - Network/Fleet/Schedule optimization
+ * 4. Operations - Flight/Crew/Maintenance status
+ * 5. Simulate - What-if scenario analysis
+ * 6. Data - Data health and platform status
  */
 const navigation = [
+  { id: 'demo', name: 'Demo', icon: Presentation, desc: 'VC/Board View' },
   { id: 'controlroom', name: 'Control Room', icon: Target, desc: 'Decision OS' },
-  { id: 'network', name: 'Network', icon: Network, desc: 'Routes & Markets' },
   { id: 'tradeoffs', name: 'Optimize', icon: Cpu, desc: 'RASM Solver' },
   { id: 'operations', name: 'Operations', icon: Settings2, desc: 'Fleet • Crew • MRO' },
-  { id: 'analytics', name: 'Analytics', icon: BarChart3, desc: 'Curves & Scenarios' },
+  { id: 'simulate', name: 'Simulate', icon: FlaskConical, desc: 'What-If Analysis' },
+  { id: 'data', name: 'Data', icon: Database, desc: 'Data Health' },
 ] as const;
 
 interface SidebarProps {
@@ -43,10 +51,12 @@ export function Sidebar({ dataStatus }: SidebarProps) {
 
   const mapToNewView = (view: string) => {
     const mapping: Record<string, string> = {
-      intelligence: 'network',
-      crossdomain: 'network',
-      booking: 'analytics',
-      scenarios: 'analytics',
+      intelligence: 'controlroom',
+      crossdomain: 'controlroom',
+      network: 'controlroom',
+      booking: 'simulate',
+      scenarios: 'simulate',
+      analytics: 'simulate',
       fleet: 'operations',
       crew: 'operations',
       mro: 'operations',
@@ -59,11 +69,12 @@ export function Sidebar({ dataStatus }: SidebarProps) {
   const getStatusColor = (id: string) => {
     if (!dataStatus) return 'bg-slate-300';
     const statusMap: Record<string, boolean> = {
+      demo: true, // Demo always has curated data
       controlroom: dataStatus.network_loaded,
-      network: dataStatus.network_loaded,
       tradeoffs: dataStatus.network_loaded,
       operations: dataStatus.fleet_loaded && dataStatus.crew_loaded && dataStatus.mro_loaded,
-      analytics: dataStatus.network_loaded,
+      simulate: dataStatus.network_loaded,
+      data: true, // Data health page always works
     };
     return statusMap[id] && isConnected ? 'bg-emerald-500' : 'bg-slate-300';
   };

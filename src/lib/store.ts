@@ -36,9 +36,10 @@ interface AppState {
   error: string | null;
   setError: (error: string | null) => void;
 
-  // Active view - simplified to 4 main tabs + legacy support + OS Control Room
-  activeView: 'network' | 'controlroom' | 'tradeoffs' | 'operations' | 'analytics' | 'route' | 'fleet' | 'crew' | 'mro' | 'scenarios' | 'intelligence' | 'booking' | 'crossdomain';
-  setActiveView: (view: 'network' | 'controlroom' | 'tradeoffs' | 'operations' | 'analytics' | 'route' | 'fleet' | 'crew' | 'mro' | 'scenarios' | 'intelligence' | 'booking' | 'crossdomain') => void;
+  // Active view - 6 main tabs per spec: Demo, Control Room, Optimize, Operations, Simulate, Data
+  // Plus legacy support for backwards compatibility
+  activeView: 'demo' | 'controlroom' | 'tradeoffs' | 'operations' | 'simulate' | 'data' | 'network' | 'analytics' | 'route' | 'fleet' | 'crew' | 'mro' | 'scenarios' | 'intelligence' | 'booking' | 'crossdomain';
+  setActiveView: (view: 'demo' | 'controlroom' | 'tradeoffs' | 'operations' | 'simulate' | 'data' | 'network' | 'analytics' | 'route' | 'fleet' | 'crew' | 'mro' | 'scenarios' | 'intelligence' | 'booking' | 'crossdomain') => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
