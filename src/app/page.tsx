@@ -6,6 +6,8 @@ import { NetworkView } from '@/components/NetworkView';
 import { FleetView } from '@/components/FleetView';
 import { CrewView } from '@/components/CrewView';
 import { MROView } from '@/components/MROView';
+import { OperationsView } from '@/components/OperationsView';
+import { AnalyticsView } from '@/components/AnalyticsView';
 import IntelligenceView from '@/components/IntelligenceView';
 import BookingCurveView from '@/components/BookingCurveView';
 import { GlobalHeader } from '@/components/GlobalHeader';
@@ -104,64 +106,10 @@ export default function Home() {
         );
 
       case 'operations':
-        // Combined Fleet + Crew + MRO view - McKinsey style
-        return (
-          <div className="h-full overflow-auto p-6 bg-slate-100">
-            <div className="max-w-7xl mx-auto">
-              <div className="bg-[#002855] rounded-t-lg px-6 py-4 mb-0">
-                <h1 className="text-xl font-bold text-white">Operations Overview</h1>
-                <p className="text-blue-200 text-sm">Fleet • Crew • MRO</p>
-              </div>
-              <div className="bg-white rounded-b-lg shadow-lg p-6">
-                <div className="grid grid-cols-3 gap-6 mb-6">
-                  <div className="bg-slate-50 rounded-lg p-4 text-center">
-                    <p className="text-xs text-slate-500 uppercase tracking-wider">Fleet</p>
-                    <p className="text-3xl font-bold text-slate-800">{dataStatus?.fleet_rows || 0}</p>
-                    <p className="text-xs text-slate-400">aircraft</p>
-                  </div>
-                  <div className="bg-slate-50 rounded-lg p-4 text-center">
-                    <p className="text-xs text-slate-500 uppercase tracking-wider">Crew</p>
-                    <p className="text-3xl font-bold text-slate-800">{dataStatus?.crew_rows || 0}</p>
-                    <p className="text-xs text-slate-400">members</p>
-                  </div>
-                  <div className="bg-slate-50 rounded-lg p-4 text-center">
-                    <p className="text-xs text-slate-500 uppercase tracking-wider">MRO</p>
-                    <p className="text-3xl font-bold text-slate-800">{dataStatus?.mro_rows || 0}</p>
-                    <p className="text-xs text-slate-400">work orders</p>
-                  </div>
-                </div>
-                <div className="text-center text-slate-400 py-8">
-                  <p>Select a specific view from the tabs to see detailed data</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        );
+        return <OperationsView dataStatus={dataStatus} />;
 
       case 'analytics':
-        // Combined Booking Curves + Intelligence - McKinsey style
-        return (
-          <div className="h-full overflow-auto p-6 bg-slate-100">
-            <div className="max-w-7xl mx-auto">
-              <div className="bg-[#002855] rounded-t-lg px-6 py-4 mb-0">
-                <h1 className="text-xl font-bold text-white">Analytics Dashboard</h1>
-                <p className="text-blue-200 text-sm">Booking Curves • Market Intelligence</p>
-              </div>
-              <div className="bg-white rounded-b-lg shadow-lg p-6">
-                <div className="grid grid-cols-2 gap-6">
-                  <div className="bg-slate-50 rounded-lg p-4">
-                    <p className="text-xs text-slate-500 uppercase tracking-wider mb-2">Booking Curves</p>
-                    <p className="text-sm text-slate-600">Demand signals by segment timing</p>
-                  </div>
-                  <div className="bg-slate-50 rounded-lg p-4">
-                    <p className="text-xs text-slate-500 uppercase tracking-wider mb-2">Market Intelligence</p>
-                    <p className="text-sm text-slate-600">Competitive position analysis</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        );
+        return <AnalyticsView />;
 
       // Legacy views for backwards compatibility
       case 'crossdomain':

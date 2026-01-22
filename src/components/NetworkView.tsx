@@ -201,27 +201,27 @@ export function NetworkView({ initialData, onHubClick }: NetworkViewProps) {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-500 border-t-transparent" />
+      <div className="flex items-center justify-center h-full bg-slate-100">
+        <div className="animate-spin rounded-full h-8 w-8 border-2 border-[#002855] border-t-transparent" />
       </div>
     );
   }
 
   return (
-    <div className="h-full flex flex-col overflow-hidden">
-      {/* Header */}
-      <div className="px-6 py-4 border-b border-slate-800 flex-shrink-0">
+    <div className="h-full flex flex-col overflow-hidden bg-slate-100">
+      {/* Header - McKinsey navy */}
+      <div className="bg-[#002855] px-6 py-4 flex-shrink-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div>
-              <h1 className="text-xl font-semibold text-slate-100">Network Overview</h1>
-              <p className="text-sm text-slate-400 mt-1">
+              <h1 className="text-xl font-bold text-white">Network Overview</h1>
+              <p className="text-sm text-blue-200 mt-1">
                 Real-time network performance across {networkStats?.unique_routes || 0} routes
               </p>
             </div>
-            <div className="flex items-center gap-2 px-2 py-1 bg-emerald-500/10 rounded border border-emerald-500/30">
+            <div className="flex items-center gap-2 px-2 py-1 bg-white/10 rounded border border-white/20">
               <LiveDot lastUpdate={lastUpdate} isConnected={true} />
-              <span className="text-xs text-emerald-400">
+              <span className="text-xs text-emerald-300">
                 Updated {formatRelativeTime(lastUpdate)}
               </span>
             </div>
@@ -235,14 +235,14 @@ export function NetworkView({ initialData, onHubClick }: NetworkViewProps) {
       </div>
 
       {/* Revenue Metrics - RASM is north star */}
-      <div className="px-6 py-4 flex-shrink-0">
+      <div className="px-6 py-4 flex-shrink-0 bg-white border-b border-slate-200">
         {revenueMetrics ? (
           <RevenueMetricGrid
             dailyRevenue={revenueMetrics.dailyRevenue}
             rasmCents={revenueMetrics.rasmCents}
             yieldCents={revenueMetrics.yieldCents}
             revPerDeparture={revenueMetrics.revPerDeparture}
-            previousDailyRevenue={null} // No historical comparison without API
+            previousDailyRevenue={null}
             previousRasm={null}
             previousYield={null}
             previousRevPerDeparture={null}
@@ -252,9 +252,9 @@ export function NetworkView({ initialData, onHubClick }: NetworkViewProps) {
         ) : (
           <div className="grid grid-cols-4 gap-4">
             {['Daily Revenue', 'RASM', 'Yield', 'Rev/Departure'].map((title) => (
-              <div key={title} className="bg-slate-800 rounded-lg border border-slate-700 p-4">
-                <div className="text-xs text-slate-500 mb-1">{title}</div>
-                <div className="text-lg font-medium text-slate-500">Loading...</div>
+              <div key={title} className="bg-slate-50 rounded-lg border border-slate-200 p-4">
+                <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">{title}</div>
+                <div className="text-lg font-medium text-slate-400">Loading...</div>
               </div>
             ))}
           </div>
@@ -262,12 +262,12 @@ export function NetworkView({ initialData, onHubClick }: NetworkViewProps) {
       </div>
 
       {/* Map + Table Layout */}
-      <div className="flex-1 flex min-h-0 px-6 pb-6 gap-6 overflow-hidden">
+      <div className="flex-1 flex min-h-0 px-6 pb-6 pt-4 gap-6 overflow-hidden">
         {/* Left: Map + Alerts (when no route selected) */}
         {!selectedRoute && (
           <div className="w-2/5 flex flex-col gap-4 min-h-0">
             {/* Network Map */}
-            <div className="flex-1 min-h-0">
+            <div className="flex-1 min-h-0 bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
               <NetworkMap
                 hubs={hubMapData}
                 selectedHub={selectedHub}
@@ -277,23 +277,23 @@ export function NetworkView({ initialData, onHubClick }: NetworkViewProps) {
             </div>
 
             {/* Live Fare Alerts - from SerpAPI */}
-            <div className="bg-slate-800 rounded-lg border border-slate-700 overflow-hidden flex-shrink-0">
-              <div className="px-4 py-3 border-b border-slate-700 flex items-center justify-between">
-                <h3 className="text-sm font-medium text-white flex items-center gap-2">
-                  <Activity className="w-4 h-4 text-amber-400" />
+            <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden flex-shrink-0">
+              <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wider flex items-center gap-2">
+                  <Activity className="w-4 h-4 text-amber-500" />
                   Live Fare Alerts
                 </h3>
-                <span className="text-xs text-slate-500">
+                <span className="text-xs text-slate-400">
                   API: {apiBudget.remaining}/{apiBudget.limit}
                 </span>
               </div>
-              <div className="divide-y divide-slate-700/50 max-h-[200px] overflow-y-auto">
+              <div className="divide-y divide-slate-100 max-h-[200px] overflow-y-auto">
                 {alerts.filter(a => a.type === 'competitor_fare').length === 0 ? (
                   <div className="px-4 py-6 text-center">
                     <div className="text-slate-500 text-sm mb-2">
                       {apiBudget.remaining === 0 ? 'API budget exhausted' : 'No fare alerts'}
                     </div>
-                    <p className="text-xs text-slate-600">
+                    <p className="text-xs text-slate-400">
                       {apiBudget.remaining > 0
                         ? 'Fare alerts appear when competitors change prices significantly.'
                         : 'Budget resets at midnight.'}
@@ -353,13 +353,13 @@ function AlertRow({
   message: string;
   time: string;
 }) {
-  const iconClass = type === 'critical' ? 'text-red-400' : type === 'warning' ? 'text-amber-400' : 'text-blue-400';
+  const iconClass = type === 'critical' ? 'text-red-500' : type === 'warning' ? 'text-amber-500' : 'text-blue-500';
 
   return (
-    <div className="px-4 py-2.5 flex items-start gap-2 hover:bg-slate-700/30 transition-colors">
+    <div className="px-4 py-2.5 flex items-start gap-2 hover:bg-slate-50 transition-colors">
       <AlertTriangle className={`w-4 h-4 mt-0.5 flex-shrink-0 ${iconClass}`} />
-      <p className="text-sm text-slate-300 flex-1">{message}</p>
-      <span className="text-xs text-slate-500 whitespace-nowrap">{time}</span>
+      <p className="text-sm text-slate-700 flex-1">{message}</p>
+      <span className="text-xs text-slate-400 whitespace-nowrap">{time}</span>
     </div>
   );
 }
