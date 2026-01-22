@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Check, X, ArrowRight, Cpu } from 'lucide-react';
 import * as api from '@/lib/api';
+import { formatCurrencyDelta } from '@/lib/formatters';
 
 /**
  * OptimizationDemo - McKinsey-style RASM optimization presentation
@@ -222,8 +223,8 @@ export function OptimizationDemo() {
           <div className="grid grid-cols-4 gap-4">
             <MetricCard label="Current RASM" value={`${current.rasm_cents.toFixed(2)}¢`} sublabel="per ASM" />
             <MetricCard label="Optimized RASM" value={`${recommended.rasm_cents.toFixed(2)}¢`} sublabel="per ASM" highlight />
-            <MetricCard label="Daily Uplift" value={`+$${scenario.impact.delta_profit.toLocaleString()}`} sublabel="incremental profit" positive />
-            <MetricCard label="Annual Impact" value={`+$${(scenario.impact.delta_profit * 365).toLocaleString()}`} sublabel="at 100% execution" positive />
+            <MetricCard label="Daily Uplift" value={formatCurrencyDelta(scenario.impact.delta_profit, { suffix: '/day' })} sublabel="incremental profit" positive={scenario.impact.delta_profit >= 0} />
+            <MetricCard label="Annual Impact" value={formatCurrencyDelta(scenario.impact.delta_profit * 365, { compact: true })} sublabel="at 100% execution" positive={scenario.impact.delta_profit >= 0} />
           </div>
         </div>
 

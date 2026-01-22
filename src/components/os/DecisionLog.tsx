@@ -15,7 +15,7 @@ import {
   ChevronUp,
   Filter,
 } from 'lucide-react';
-import { formatCurrency, formatRelativeTime } from '@/lib/formatters';
+import { formatCurrencyDelta, formatRASMDelta, formatRelativeTime } from '@/lib/formatters';
 
 export type LogEntryType = 'proposed' | 'simulated' | 'approved' | 'rejected' | 'executed' | 'validated' | 'reverted';
 
@@ -115,7 +115,7 @@ export function DecisionLog({
         <div className="flex items-center gap-1">
           <span className="text-slate-500">Net Impact:</span>
           <span className={`font-bold ${totalRevenueImpact >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-            {totalRevenueImpact >= 0 ? '+' : ''}{formatCurrency(totalRevenueImpact, { compact: true })}
+            {formatCurrencyDelta(totalRevenueImpact, { compact: true })}
           </span>
         </div>
       </div>
@@ -182,7 +182,7 @@ export function DecisionLog({
                       {entry.revenueImpact && (
                         <span className={`text-xs font-medium ${entry.revenueImpact >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                           {entry.revenueImpact >= 0 ? <TrendingUp className="w-3 h-3 inline" /> : <TrendingDown className="w-3 h-3 inline" />}
-                          {' '}{formatCurrency(entry.revenueImpact, { compact: true })}
+                          {' '}{formatCurrencyDelta(entry.revenueImpact, { compact: true })}
                         </span>
                       )}
                     </div>
@@ -197,7 +197,7 @@ export function DecisionLog({
                           <div className="flex items-center gap-2">
                             <span className="text-slate-500">RASM Impact:</span>
                             <span className={entry.rasmImpact >= 0 ? 'text-emerald-600' : 'text-red-600'}>
-                              {entry.rasmImpact >= 0 ? '+' : ''}{entry.rasmImpact.toFixed(2)}¢
+                              {formatRASMDelta(entry.rasmImpact)}
                             </span>
                           </div>
                         )}

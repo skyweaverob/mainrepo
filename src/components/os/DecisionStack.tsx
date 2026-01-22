@@ -3,7 +3,13 @@
 import { useState } from 'react';
 import { Layers, ChevronRight, Filter } from 'lucide-react';
 import { DecisionTile, DecisionStatus, DecisionPriority, DecisionCategory } from './DecisionTile';
-import { formatCurrency } from '@/lib/formatters';
+import { formatCurrencyDelta, formatRASMDelta } from '@/lib/formatters';
+import type {
+  DecisionConsumption,
+  DecisionConflicts,
+  DecisionConstraint,
+  DecisionEvidence,
+} from '@/types';
 
 export interface Decision {
   id: string;
@@ -14,8 +20,16 @@ export interface Decision {
   status: DecisionStatus;
   revenueImpact: number;
   rasmImpact: number;
+  asmDelta?: number;
   currentState: string;
   proposedState: string;
+  // OS Primitives
+  consumes?: DecisionConsumption;
+  conflicts?: DecisionConflicts;
+  osConstraints?: DecisionConstraint[];
+  evidence?: DecisionEvidence;
+  confidence?: 'high' | 'medium' | 'low';
+  // Legacy
   constraints?: string[];
   risks?: string[];
   owner?: string;
@@ -129,13 +143,13 @@ export function DecisionStack({
           <div>
             <div className="text-[10px] text-slate-500 uppercase tracking-wider">Total Daily Impact</div>
             <div className={`text-lg font-bold ${totalRevenue >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-              {totalRevenue >= 0 ? '+' : ''}{formatCurrency(totalRevenue, { compact: true })}
+              {formatCurrencyDelta(totalRevenue, { compact: true })}
             </div>
           </div>
           <div>
             <div className="text-[10px] text-slate-500 uppercase tracking-wider">Avg RASM Impact</div>
             <div className={`text-lg font-bold ${avgRasmImpact >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-              {avgRasmImpact >= 0 ? '+' : ''}{avgRasmImpact.toFixed(2)}¢
+              {formatRASMDelta(avgRasmImpact)}
             </div>
           </div>
           <div>
@@ -145,7 +159,7 @@ export function DecisionStack({
           <div>
             <div className="text-[10px] text-slate-500 uppercase tracking-wider">Annual Potential</div>
             <div className={`text-lg font-bold ${totalRevenue >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-              {totalRevenue >= 0 ? '+' : ''}{formatCurrency(totalRevenue * 365, { compact: true })}
+              {formatCurrencyDelta(totalRevenue * 365, { compact: true })}
             </div>
           </div>
         </div>
@@ -182,7 +196,26 @@ export function DecisionStack({
           visibleDecisions.map((decision) => (
             <div key={decision.id} className="p-4">
               <DecisionTile
-                {...decision}
+                id={decision.id}
+                title={decision.title}
+                description={decision.description}
+                category={decision.category}
+                priority={decision.priority}
+                status={decision.status}
+                revenueImpact={decision.revenueImpact}
+                rasmImpact={decision.rasmImpact}
+                asmDelta={decision.asmDelta}
+                currentState={decision.currentState}
+                proposedState={decision.proposedState}
+                consumes={decision.consumes}
+                conflicts={decision.conflicts}
+                osConstraints={decision.osConstraints}
+                evidence={decision.evidence}
+                confidence={decision.confidence}
+                constraints={decision.constraints}
+                risks={decision.risks}
+                owner={decision.owner}
+                dueDate={decision.dueDate}
                 onApprove={onDecisionApprove ? () => onDecisionApprove(decision.id) : undefined}
                 onReject={onDecisionReject ? () => onDecisionReject(decision.id) : undefined}
                 onSimulate={onDecisionSimulate ? () => onDecisionSimulate(decision.id) : undefined}

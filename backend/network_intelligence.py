@@ -29,11 +29,11 @@ class MarketIntelligence:
     market_key: str
 
     # Traffic data (T-100)
-    t100_passengers: int = 0
+    t100_passengers: int = 0  # Total market passengers from T-100
     t100_carriers: List[str] = field(default_factory=list)
     nk_passengers: int = 0
     f9_passengers: int = 0
-    nk_market_share: float = 0.0
+    nk_market_share: float = 0.0  # Stored as decimal (0-1), e.g., 0.512 = 51.2%
 
     # Fare data (DB1B / scraped)
     avg_fare: float = 0.0
@@ -154,14 +154,106 @@ class NetworkIntelligenceEngine:
     def get_market_competitive_position(self) -> Dict[str, MarketIntelligence]:
         """
         Build comprehensive competitive intelligence for all markets.
+        Calculates market share directly from T-100 data.
         """
         markets = {}
 
-        if self.overlap_df is not None:
+        # PRIMARY: Calculate market share from T-100 data
+        if self.t100_df is not None:
+            # Get total passengers per market (all carriers)
+            market_totals = self.t100_df.groupby(['ORIGIN', 'DEST']).agg({
+                'PASSENGERS': 'sum',
+                'DISTANCE': 'first'
+            }).reset_index()
+            market_totals['market'] = market_totals.apply(
+                lambda r: '_'.join(sorted([r['ORIGIN'], r['DEST']])), axis=1
+            )
+            # Sum both directions for true market size
+            market_totals = market_totals.groupby('market').agg({
+                'PASSENGERS': 'sum',
+                'DISTANCE': 'first',
+                'ORIGIN': 'first',
+                'DEST': 'first'
+            }).reset_index()
+
+            # Get NK passengers per market
+            nk_df = self.t100_df[self.t100_df['UNIQUE_CARRIER'] == 'NK']
+            if len(nk_df) > 0:
+                nk_market = nk_df.groupby(['ORIGIN', 'DEST']).agg({
+                    'PASSENGERS': 'sum'
+                }).reset_index()
+                nk_market['market'] = nk_market.apply(
+                    lambda r: '_'.join(sorted([r['ORIGIN'], r['DEST']])), axis=1
+                )
+                nk_market = nk_market.groupby('market')['PASSENGERS'].sum().reset_index()
+                nk_market.columns = ['market', 'nk_passengers']
+
+                # Get F9 (Frontier) passengers per market
+                f9_df = self.t100_df[self.t100_df['UNIQUE_CARRIER'] == 'F9']
+                f9_market = f9_df.groupby(['ORIGIN', 'DEST']).agg({
+                    'PASSENGERS': 'sum'
+                }).reset_index() if len(f9_df) > 0 else pd.DataFrame(columns=['ORIGIN', 'DEST', 'PASSENGERS'])
+                if len(f9_market) > 0:
+                    f9_market['market'] = f9_market.apply(
+                        lambda r: '_'.join(sorted([r['ORIGIN'], r['DEST']])), axis=1
+                    )
+                    f9_market = f9_market.groupby('market')['PASSENGERS'].sum().reset_index()
+                    f9_market.columns = ['market', 'f9_passengers']
+
+                # Merge all data
+                combined = market_totals.merge(nk_market, on='market', how='inner')
+                if len(f9_market) > 0:
+                    combined = combined.merge(f9_market, on='market', how='left')
+                    combined['f9_passengers'] = combined['f9_passengers'].fillna(0).astype(int)
+                else:
+                    combined['f9_passengers'] = 0
+
+                # Calculate market share (decimal 0-1)
+                combined['nk_share'] = combined['nk_passengers'] / combined['PASSENGERS']
+                combined['nk_share'] = combined['nk_share'].clip(0, 1)  # Ensure valid range
+
+                for _, row in combined.iterrows():
+                    market_key = row['market']
+                    airports = market_key.split('_')
+                    origin = airports[0] if len(airports) > 0 else ''
+                    dest = airports[1] if len(airports) > 1 else ''
+
+                    mi = MarketIntelligence(
+                        origin=origin,
+                        destination=dest,
+                        market_key=market_key,
+                        t100_passengers=int(row['PASSENGERS']),
+                        nk_passengers=int(row['nk_passengers']),
+                        f9_passengers=int(row['f9_passengers']),
+                        nk_market_share=float(row['nk_share']),
+                        distance=float(row['DISTANCE']) if pd.notna(row['DISTANCE']) else 0,
+                        is_overlap_market=row['f9_passengers'] > 0
+                    )
+
+                    total = mi.nk_passengers + mi.f9_passengers
+                    if total > 500000:
+                        mi.competitive_intensity = 'intense'
+                    elif total > 200000:
+                        mi.competitive_intensity = 'high'
+                    elif total > 100000:
+                        mi.competitive_intensity = 'moderate'
+                    else:
+                        mi.competitive_intensity = 'low'
+
+                    markets[market_key] = mi
+
+        # FALLBACK: Use overlap_df if T-100 doesn't have NK data
+        elif self.overlap_df is not None:
             for _, row in self.overlap_df.iterrows():
                 market_key = row['market']
                 origin = row['origin']
                 dest = row['dest']  # Column is 'dest' not 'destination'
+
+                # Read nk_share and normalize to decimal (0-1) format
+                # CSV may store as percentage (51.2) or decimal (0.512)
+                raw_share = float(row.get('nk_share', 0))
+                # If > 1, assume it's a percentage and convert to decimal
+                nk_share_decimal = raw_share / 100 if raw_share > 1 else raw_share
 
                 mi = MarketIntelligence(
                     origin=origin,
@@ -169,7 +261,7 @@ class NetworkIntelligenceEngine:
                     market_key=market_key,
                     nk_passengers=int(row.get('nk_passengers', 0)),
                     f9_passengers=int(row.get('f9_passengers', 0)),
-                    nk_market_share=float(row.get('nk_share', 0)),
+                    nk_market_share=nk_share_decimal,
                     distance=float(row.get('distance', 0)),
                     is_overlap_market=True
                 )

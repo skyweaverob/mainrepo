@@ -194,6 +194,32 @@ def convert_numpy(obj):
     return obj
 
 
+# ==================== Route Distance Lookup ====================
+# Known route distances in nautical miles (great circle)
+# Used as fallback when no network intelligence data is available
+ROUTE_DISTANCES_NM: Dict[str, float] = {
+    # Spirit hubs to major leisure destinations
+    'DTW_MCO': 985, 'DTW_FLL': 1067, 'DTW_LAS': 1749, 'DTW_SJU': 1676,
+    'DTW_CUN': 1394, 'DTW_LAX': 1973, 'DTW_DEN': 1123, 'DTW_PHX': 1671,
+    'MCO_FLL': 178, 'MCO_LAS': 2039, 'MCO_EWR': 802, 'MCO_DTW': 985,
+    'MCO_LAX': 2215, 'MCO_DEN': 1545, 'MCO_SJU': 1048,
+    'FLL_MCO': 178, 'FLL_LAS': 2174, 'FLL_EWR': 948, 'FLL_DTW': 1067,
+    'FLL_LAX': 2343, 'FLL_SJU': 1047, 'FLL_CUN': 463,
+    'LAS_MCO': 2039, 'LAS_DTW': 1749, 'LAS_FLL': 2174, 'LAS_LAX': 236,
+    'LAS_DEN': 628, 'LAS_PHX': 256, 'LAS_SFO': 414,
+    'EWR_MCO': 802, 'EWR_FLL': 948, 'EWR_LAS': 2174, 'EWR_DTW': 442,
+    'EWR_LAX': 2454, 'EWR_SJU': 1616, 'EWR_CUN': 1553,
+}
+
+
+def get_route_distance_nm(origin: str, destination: str, default: float = 800) -> float:
+    """Get route distance in nautical miles with fallback to default."""
+    # Try both directions
+    key1 = f"{origin.upper()}_{destination.upper()}"
+    key2 = f"{destination.upper()}_{origin.upper()}"
+    return ROUTE_DISTANCES_NM.get(key1) or ROUTE_DISTANCES_NM.get(key2) or default
+
+
 @app.on_event("startup")
 async def load_default_data():
     """Load default data files on startup."""

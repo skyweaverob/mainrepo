@@ -1,5 +1,55 @@
 // Number formatting utilities for SkyWeave
 // Following strict formatting standards from architecture spec
+// CRITICAL: Prevents bugs like "+$-986" or ">100% share"
+
+/**
+ * Validate and clamp a number to prevent impossible values
+ */
+export function validateNumber(value: number | null | undefined): number | null {
+  if (value === null || value === undefined || isNaN(value) || !isFinite(value)) {
+    return null;
+  }
+  return value;
+}
+
+/**
+ * Validate market share - must be 0-100%
+ * Returns null if invalid (shows "Data quality issue" in UI)
+ */
+export function validateMarketShare(value: number | null | undefined): number | null {
+  const validated = validateNumber(value);
+  if (validated === null) return null;
+  if (validated < 0 || validated > 100) return null; // Invalid share
+  return validated;
+}
+
+/**
+ * Format currency delta values - PROPERLY handles negatives
+ * FIXES: "+$-986" bug by properly handling the sign
+ * @returns Formatted string like "+$1,234" or "-$1,234" (NEVER "+$-")
+ */
+export function formatCurrencyDelta(
+  value: number | null | undefined,
+  options: { compact?: boolean; suffix?: string } = {}
+): string {
+  const validated = validateNumber(value);
+  if (validated === null) return '-';
+
+  const { compact = false, suffix = '' } = options;
+  const absValue = Math.abs(validated);
+  const sign = validated >= 0 ? '+' : '-';
+
+  let formatted: string;
+  if (compact && absValue >= 1_000_000) {
+    formatted = `${(absValue / 1_000_000).toFixed(1)}M`;
+  } else if (compact && absValue >= 1_000) {
+    formatted = `${(absValue / 1_000).toFixed(0)}K`;
+  } else {
+    formatted = absValue.toLocaleString('en-US', { maximumFractionDigits: 0 });
+  }
+
+  return `${sign}$${formatted}${suffix}`;
+}
 
 /**
  * Format currency values
@@ -11,33 +61,35 @@ export function formatCurrency(
   value: number | null | undefined,
   options: { compact?: boolean; showSign?: boolean } = {}
 ): string {
-  if (value === null || value === undefined || isNaN(value)) {
-    return '-';
-  }
+  const validated = validateNumber(value);
+  if (validated === null) return '-';
 
   const { compact = false, showSign = false } = options;
-  const sign = showSign && value > 0 ? '+' : '';
-  const absValue = Math.abs(value);
+
+  // Use the delta formatter if sign is needed
+  if (showSign) {
+    return formatCurrencyDelta(validated, { compact });
+  }
+
+  const absValue = Math.abs(validated);
 
   if (compact && absValue >= 1_000_000) {
-    const millions = value / 1_000_000;
-    return `${sign}$${millions.toFixed(1)}M`;
+    const millions = validated / 1_000_000;
+    return `$${millions.toFixed(1)}M`;
   }
 
   if (compact && absValue >= 1_000) {
-    const thousands = value / 1_000;
-    return `${sign}$${thousands.toFixed(0)}K`;
+    const thousands = validated / 1_000;
+    return `$${thousands.toFixed(0)}K`;
   }
 
-  // Standard format with commas, max 2 decimal places (round to nearest dollar)
-  const formatted = new Intl.NumberFormat('en-US', {
+  // Standard format with commas
+  return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: 'USD',
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
-  }).format(value);
-
-  return showSign && value > 0 ? `+${formatted}` : formatted;
+  }).format(validated);
 }
 
 /**
@@ -104,7 +156,21 @@ export function formatPercentage(
 }
 
 /**
+ * Format RASM delta with proper sign handling
+ * @returns Formatted string like "+0.12¢" or "-0.12¢"
+ */
+export function formatRASMDelta(cents: number | null | undefined): string {
+  const validated = validateNumber(cents);
+  if (validated === null) return '-';
+
+  const sign = validated >= 0 ? '+' : '-';
+  const absValue = Math.abs(validated);
+  return `${sign}${absValue.toFixed(2)}¢`;
+}
+
+/**
  * Format a delta (change) value with sign and color class
+ * FIXES: Proper negative number handling (no "+$-" format)
  * @param value - The delta value
  * @param isRevenue - If true, positive is green; if false, positive might be red (like costs)
  * @returns Object with formatted string and color class
@@ -113,28 +179,20 @@ export function formatDelta(
   value: number | null | undefined,
   isRevenue: boolean = true
 ): { text: string; colorClass: string } {
-  if (value === null || value === undefined || isNaN(value)) {
+  const validated = validateNumber(value);
+  if (validated === null) {
     return { text: '-', colorClass: 'text-slate-400' };
   }
 
-  const sign = value > 0 ? '+' : '';
-  const absValue = Math.abs(value);
-
-  let text: string;
-  if (absValue >= 1_000_000) {
-    text = `${sign}$${(value / 1_000_000).toFixed(1)}M`;
-  } else if (absValue >= 1_000) {
-    text = `${sign}$${(value / 1_000).toFixed(0)}K`;
-  } else {
-    text = `${sign}$${value.toFixed(0)}`;
-  }
+  // Use the proper delta formatter that handles signs correctly
+  const text = formatCurrencyDelta(validated, { compact: true });
 
   // Determine color based on direction and whether it's revenue
   let colorClass: string;
-  if (value > 0) {
-    colorClass = isRevenue ? 'text-emerald-400' : 'text-red-400';
-  } else if (value < 0) {
-    colorClass = isRevenue ? 'text-red-400' : 'text-emerald-400';
+  if (validated > 0) {
+    colorClass = isRevenue ? 'text-emerald-600' : 'text-red-600';
+  } else if (validated < 0) {
+    colorClass = isRevenue ? 'text-red-600' : 'text-emerald-600';
   } else {
     colorClass = 'text-slate-400';
   }

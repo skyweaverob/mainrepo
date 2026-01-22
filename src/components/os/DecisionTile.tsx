@@ -10,12 +10,30 @@ import {
   ChevronDown,
   ChevronUp,
   Play,
+  ArrowLeftRight,
+  TrendingDown,
+  Minimize2,
+  Maximize2,
+  LogOut,
+  Plus,
+  Shuffle,
+  DollarSign,
+  XCircle,
 } from 'lucide-react';
-import { formatCurrency } from '@/lib/formatters';
+import { formatCurrencyDelta, formatRASMDelta } from '@/lib/formatters';
+import { ConsumesDisplacesConflictsRow } from './ConsumesDisplacesConflicts';
+import type {
+  DecisionStatus,
+  DecisionPriority,
+  DecisionCategory,
+  DecisionConsumption,
+  DecisionConflicts,
+  DecisionConstraint,
+  DecisionEvidence,
+} from '@/types';
 
-export type DecisionStatus = 'proposed' | 'simulated' | 'approved' | 'executing' | 'completed' | 'rejected';
-export type DecisionPriority = 'critical' | 'high' | 'medium' | 'low';
-export type DecisionCategory = 'pricing' | 'capacity' | 'equipment' | 'schedule' | 'crew';
+// Re-export types for backwards compatibility
+export type { DecisionStatus, DecisionPriority, DecisionCategory } from '@/types';
 
 interface DecisionTileProps {
   id: string;
@@ -28,12 +46,24 @@ interface DecisionTileProps {
   // Impact metrics
   revenueImpact: number; // Daily $ impact
   rasmImpact: number; // Cents change
+  asmDelta?: number; // ASM change
 
   // Current vs proposed
   currentState: string;
   proposedState: string;
 
-  // Constraints and risks
+  // OS Primitives: Resource consumption
+  consumes?: DecisionConsumption;
+  conflicts?: DecisionConflicts;
+  osConstraints?: DecisionConstraint[];
+
+  // Evidence
+  evidence?: DecisionEvidence;
+
+  // Confidence
+  confidence?: 'high' | 'medium' | 'low';
+
+  // Legacy: simple constraints and risks (for backwards compat)
   constraints?: string[];
   risks?: string[];
 
@@ -64,17 +94,27 @@ const STATUS_CONFIG: Record<DecisionStatus, { color: string; bgColor: string; ic
   proposed: { color: 'text-slate-600', bgColor: 'bg-slate-100', icon: Clock },
   simulated: { color: 'text-blue-600', bgColor: 'bg-blue-100', icon: Play },
   approved: { color: 'text-emerald-600', bgColor: 'bg-emerald-100', icon: CheckCircle2 },
+  queued: { color: 'text-purple-600', bgColor: 'bg-purple-100', icon: Clock },
   executing: { color: 'text-amber-600', bgColor: 'bg-amber-100', icon: Play },
+  implemented: { color: 'text-emerald-600', bgColor: 'bg-emerald-100', icon: CheckCircle2 },
   completed: { color: 'text-emerald-600', bgColor: 'bg-emerald-100', icon: CheckCircle2 },
+  validated: { color: 'text-emerald-700', bgColor: 'bg-emerald-100', icon: CheckCircle2 },
   rejected: { color: 'text-red-600', bgColor: 'bg-red-100', icon: AlertTriangle },
+  rolled_back: { color: 'text-red-700', bgColor: 'bg-red-100', icon: AlertTriangle },
 };
 
-const CATEGORY_CONFIG: Record<DecisionCategory, { label: string; emoji: string }> = {
-  pricing: { label: 'Pricing', emoji: '💰' },
-  capacity: { label: 'Capacity', emoji: '📊' },
-  equipment: { label: 'Equipment', emoji: '✈️' },
-  schedule: { label: 'Schedule', emoji: '📅' },
-  crew: { label: 'Crew', emoji: '👥' },
+// New OS taxonomy with icons (no emojis for professional look)
+const CATEGORY_CONFIG: Record<DecisionCategory, { label: string; icon: React.ComponentType<{ className?: string }> }> = {
+  capacity_reallocation: { label: 'Reallocation', icon: ArrowLeftRight },
+  frequency_reduction: { label: 'Freq Reduction', icon: TrendingDown },
+  downgauge: { label: 'Downgauge', icon: Minimize2 },
+  upgauge: { label: 'Upgauge', icon: Maximize2 },
+  retiming: { label: 'Retiming', icon: Clock },
+  market_exit: { label: 'Market Exit', icon: LogOut },
+  market_entry: { label: 'Market Entry', icon: Plus },
+  tail_swap: { label: 'Tail Swap', icon: Shuffle },
+  rm_action: { label: 'RM Action', icon: DollarSign },
+  do_not_do: { label: 'Do Not Do', icon: XCircle },
 };
 
 /**
@@ -90,8 +130,14 @@ export function DecisionTile({
   status,
   revenueImpact,
   rasmImpact,
+  asmDelta,
   currentState,
   proposedState,
+  consumes,
+  conflicts,
+  osConstraints,
+  evidence,
+  confidence,
   constraints = [],
   risks = [],
   owner,
@@ -109,9 +155,11 @@ export function DecisionTile({
   const statusConfig = STATUS_CONFIG[status];
   const categoryConfig = CATEGORY_CONFIG[category];
   const StatusIcon = statusConfig.icon;
+  const CategoryIcon = categoryConfig.icon;
 
   const isPositiveImpact = revenueImpact > 0;
   const annualImpact = revenueImpact * 365;
+  const hasOSPrimitives = consumes && conflicts && osConstraints;
 
   const toggleExpand = () => {
     setIsExpanded(!isExpanded);
@@ -129,15 +177,24 @@ export function DecisionTile({
 
       {/* Main Content */}
       <div className="p-4">
-        {/* Top Row: Category, Priority, Status */}
+        {/* Top Row: Category, Priority, Status, Confidence */}
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
-            <span className="text-lg">{categoryConfig.emoji}</span>
+            <CategoryIcon className="w-4 h-4 text-slate-500" />
             <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">
               {categoryConfig.label}
             </span>
           </div>
           <div className="flex items-center gap-2">
+            {confidence && (
+              <span className={`text-[10px] font-medium px-2 py-0.5 rounded ${
+                confidence === 'high' ? 'bg-emerald-100 text-emerald-700' :
+                confidence === 'medium' ? 'bg-amber-100 text-amber-700' :
+                'bg-slate-100 text-slate-600'
+              }`}>
+                {confidence.toUpperCase()} CONF
+              </span>
+            )}
             <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${priorityConfig.bgColor} ${priorityConfig.color}`}>
               {priorityConfig.label}
             </span>
@@ -153,23 +210,32 @@ export function DecisionTile({
         <p className="text-sm text-slate-600 mb-3">{description}</p>
 
         {/* Impact Metrics - THE KEY DIFFERENTIATOR */}
-        <div className="grid grid-cols-2 gap-3 mb-4">
+        <div className={`grid ${asmDelta !== undefined ? 'grid-cols-3' : 'grid-cols-2'} gap-3 mb-4`}>
           <div className={`p-3 rounded-lg ${isPositiveImpact ? 'bg-emerald-50 border border-emerald-100' : 'bg-red-50 border border-red-100'}`}>
-            <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Daily Impact</div>
+            <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Profit/Day</div>
             <div className={`text-xl font-bold ${isPositiveImpact ? 'text-emerald-600' : 'text-red-600'}`}>
-              {isPositiveImpact ? '+' : ''}{formatCurrency(revenueImpact, { compact: true })}
+              {formatCurrencyDelta(revenueImpact, { compact: true })}
             </div>
             <div className="text-[10px] text-slate-500">
-              Annual: {isPositiveImpact ? '+' : ''}{formatCurrency(annualImpact, { compact: true })}
+              Annual: {formatCurrencyDelta(annualImpact, { compact: true })}
             </div>
           </div>
-          <div className={`p-3 rounded-lg ${rasmImpact > 0 ? 'bg-emerald-50 border border-emerald-100' : 'bg-red-50 border border-red-100'}`}>
-            <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">RASM Impact</div>
-            <div className={`text-xl font-bold ${rasmImpact > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-              {rasmImpact > 0 ? '+' : ''}{rasmImpact.toFixed(2)}¢
+          <div className={`p-3 rounded-lg ${rasmImpact >= 0 ? 'bg-emerald-50 border border-emerald-100' : 'bg-red-50 border border-red-100'}`}>
+            <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">RASM Delta</div>
+            <div className={`text-xl font-bold ${rasmImpact >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+              {formatRASMDelta(rasmImpact)}
             </div>
             <div className="text-[10px] text-slate-500">per ASM</div>
           </div>
+          {asmDelta !== undefined && (
+            <div className="p-3 rounded-lg bg-slate-50 border border-slate-100">
+              <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">ASM Delta</div>
+              <div className="text-xl font-bold text-slate-700">
+                {asmDelta >= 0 ? '+' : ''}{(asmDelta / 1000).toFixed(0)}K
+              </div>
+              <div className="text-[10px] text-slate-500">capacity change</div>
+            </div>
+          )}
         </div>
 
         {/* State Change */}
@@ -188,7 +254,38 @@ export function DecisionTile({
         {/* Expandable Details */}
         {isExpanded && (
           <div className="border-t border-slate-100 pt-3 mt-3 space-y-3">
-            {/* Constraints */}
+            {/* OS Primitives: Consumes/Displaces/Conflicts */}
+            {hasOSPrimitives && (
+              <ConsumesDisplacesConflictsRow
+                consumes={consumes!}
+                conflicts={conflicts!}
+                constraints={osConstraints!}
+              />
+            )}
+
+            {/* Evidence */}
+            {evidence && (
+              <div>
+                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">
+                  Evidence
+                </div>
+                <div className="bg-slate-50 p-2 rounded text-xs text-slate-600">
+                  {evidence.explanation}
+                  {evidence.load_factor !== undefined && (
+                    <span className="ml-2 text-slate-500">
+                      • LF: {evidence.load_factor.toFixed(0)}%
+                    </span>
+                  )}
+                  {evidence.spill_rate !== undefined && (
+                    <span className="ml-2 text-slate-500">
+                      • Spill: {evidence.spill_rate.toFixed(1)}%
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Legacy Constraints */}
             {constraints.length > 0 && (
               <div>
                 <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">
