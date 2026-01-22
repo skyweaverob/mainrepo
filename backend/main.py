@@ -73,6 +73,7 @@ from network_intelligence import (
 )
 
 # Import optimization engines
+OPTIMIZER_IMPORT_ERROR = None
 try:
     from rasm_optimizer import (
         quick_rasm_analysis,
@@ -91,7 +92,9 @@ try:
     )
     OPTIMIZER_AVAILABLE = True
 except ImportError as e:
+    OPTIMIZER_IMPORT_ERROR = str(e)
     print(f"Warning: Optimization modules not available: {e}")
+    print("  → Install dependencies: pip install pulp scikit-learn")
     OPTIMIZER_AVAILABLE = False
 
 
@@ -1405,7 +1408,7 @@ class NetworkOptimizationRequest(BaseModel):
 @app.get("/api/optimizer/status")
 async def get_optimizer_status():
     """Check if optimization engine is available."""
-    return {
+    status = {
         "optimizer_available": OPTIMIZER_AVAILABLE,
         "features": {
             "mathematical_optimization": OPTIMIZER_AVAILABLE,
@@ -1415,6 +1418,13 @@ async def get_optimizer_status():
         },
         "solver": "PuLP CBC (open source)" if OPTIMIZER_AVAILABLE else None
     }
+
+    if not OPTIMIZER_AVAILABLE:
+        status["error"] = OPTIMIZER_IMPORT_ERROR
+        status["fix"] = "Run: pip install pulp scikit-learn"
+        status["note"] = "Optimizer will work once dependencies are installed. Check Railway build logs."
+
+    return status
 
 
 @app.post("/api/optimizer/route")
@@ -1426,7 +1436,7 @@ async def optimize_route(request: RouteOptimizationRequest):
     and AI recommendations.
     """
     if not OPTIMIZER_AVAILABLE:
-        raise HTTPException(status_code=503, detail="Optimization engine not available")
+        raise HTTPException(status_code=503, detail=f"Optimization engine not available: {OPTIMIZER_IMPORT_ERROR or 'unknown error'}. Install: pip install pulp scikit-learn")
 
     try:
         result = ai_optimize_route(
@@ -1459,7 +1469,7 @@ async def get_route_optimization(
     Uses market data if available, enriched with live fares when requested.
     """
     if not OPTIMIZER_AVAILABLE:
-        raise HTTPException(status_code=503, detail="Optimization engine not available")
+        raise HTTPException(status_code=503, detail=f"Optimization engine not available: {OPTIMIZER_IMPORT_ERROR or 'unknown error'}. Install: pip install pulp scikit-learn")
 
     # Try to get market data
     distance_nm = 500  # default
@@ -1526,7 +1536,7 @@ async def get_stage_length_casm(distance_nm: float):
     spread over fewer ASMs.
     """
     if not OPTIMIZER_AVAILABLE:
-        raise HTTPException(status_code=503, detail="Optimization engine not available")
+        raise HTTPException(status_code=503, detail=f"Optimization engine not available: {OPTIMIZER_IMPORT_ERROR or 'unknown error'}. Install: pip install pulp scikit-learn")
 
     casm = calculate_stage_length_casm(distance_nm)
     base_casm = 8.0
@@ -1544,7 +1554,7 @@ async def get_stage_length_casm(distance_nm: float):
 async def get_equipment_specs():
     """Get aircraft specifications for optimization."""
     if not OPTIMIZER_AVAILABLE:
-        raise HTTPException(status_code=503, detail="Optimization engine not available")
+        raise HTTPException(status_code=503, detail=f"Optimization engine not available: {OPTIMIZER_IMPORT_ERROR or 'unknown error'}. Install: pip install pulp scikit-learn")
 
     return AIRCRAFT_SPECS
 
@@ -1563,7 +1573,7 @@ async def get_ai_route_score(
     Scores route on RASM potential, strategic fit, risk, and growth.
     """
     if not OPTIMIZER_AVAILABLE:
-        raise HTTPException(status_code=503, detail="Optimization engine not available")
+        raise HTTPException(status_code=503, detail=f"Optimization engine not available: {OPTIMIZER_IMPORT_ERROR or 'unknown error'}. Install: pip install pulp scikit-learn")
 
     # Try to get real market data
     distance_nm = 500
@@ -1600,7 +1610,7 @@ async def run_network_optimization(request: NetworkOptimizationRequest):
     Optimizes fleet assignment and frequency across all routes.
     """
     if not OPTIMIZER_AVAILABLE:
-        raise HTTPException(status_code=503, detail="Optimization engine not available")
+        raise HTTPException(status_code=503, detail=f"Optimization engine not available: {OPTIMIZER_IMPORT_ERROR or 'unknown error'}. Install: pip install pulp scikit-learn")
 
     # Build routes from available data
     routes = []
@@ -1743,7 +1753,7 @@ async def simulate_equipment_swap(
     Returns before/after comparison with RASM impact.
     """
     if not OPTIMIZER_AVAILABLE:
-        raise HTTPException(status_code=503, detail="Optimization engine not available")
+        raise HTTPException(status_code=503, detail=f"Optimization engine not available: {OPTIMIZER_IMPORT_ERROR or 'unknown error'}. Install: pip install pulp scikit-learn")
 
     # Get route data
     distance_nm = 500
