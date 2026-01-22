@@ -1,495 +1,174 @@
 'use client';
 
 import { useState } from 'react';
-import {
-  FlaskConical,
-  Play,
-  Settings,
-  Clock,
-  Plane,
-  Cloud,
-  Users,
-  AlertTriangle,
-  TrendingUp,
-  TrendingDown,
-  Minus,
-  CheckCircle,
-  Shuffle,
-} from 'lucide-react';
+import { Play, AlertTriangle, CheckCircle } from 'lucide-react';
 import * as api from '@/lib/api';
 
-/**
- * SimulateView - What-If Scenario Analysis
- *
- * Per spec (Section 18):
- * Allows users to run what-if scenarios independent of the optimizer,
- * testing specific changes or disruption scenarios.
- *
- * Scenario Types:
- * 1. Schedule Change: What if we retime/cancel/add flights?
- * 2. Equipment Swap: What if we swap tails on specific routes?
- * 3. Disruption: What if weather/ATC impacts specific airports?
- * 4. Capacity Change: What if we increase/decrease frequency?
- * 5. Custom: Define arbitrary parameter changes
- */
-
-type ScenarioType = 'schedule' | 'equipment' | 'disruption' | 'capacity' | 'custom';
-
-interface ScenarioConfig {
-  name: string;
-  type: ScenarioType;
-  parameters: Record<string, any>;
-}
+type ScenarioType = 'disruption' | 'equipment' | 'schedule';
 
 interface SimulationResult {
-  baseline: {
-    completionFactor: number;
-    otp: number;
-    passengersDisrupted: number;
-    recoveryTime: number;
-    revenueImpact: number;
-    rasmImpact: number;
-  };
-  scenario: {
-    completionFactor: number;
-    otp: number;
-    passengersDisrupted: number;
-    recoveryTime: number;
-    revenueImpact: number;
-    rasmImpact: number;
-  };
-  vulnerableFlights: Array<{
-    flight: string;
-    route: string;
-    time: string;
-    passengersAffected: number;
-  }>;
+  baseline: { completionFactor: number; otp: number; passengersDisrupted: number; recoveryTime: number; revenueImpact: number; rasmImpact: number };
+  scenario: { completionFactor: number; otp: number; passengersDisrupted: number; recoveryTime: number; revenueImpact: number; rasmImpact: number };
+  vulnerableFlights: Array<{ flight: string; route: string; time: string; passengersAffected: number }>;
   recommendedMitigations: string[];
 }
 
-const SCENARIO_TEMPLATES: Record<ScenarioType, { icon: any; label: string; description: string }> = {
-  schedule: { icon: Clock, label: 'Schedule Change', description: 'Retime, cancel, or add flights' },
-  equipment: { icon: Plane, label: 'Equipment Swap', description: 'Change aircraft assignments' },
-  disruption: { icon: Cloud, label: 'Disruption', description: 'Weather or ATC impact' },
-  capacity: { icon: TrendingUp, label: 'Capacity Change', description: 'Adjust frequency' },
-  custom: { icon: Settings, label: 'Custom', description: 'Define custom parameters' },
-};
-
 const AIRPORTS = ['ATL', 'MCO', 'FLL', 'DTW', 'LAS', 'DEN', 'DFW', 'ORD', 'EWR', 'LAX'];
-const DISRUPTION_TYPES = ['Ground delay program', 'Ground stop', 'Reduced arrival rate', 'Weather advisory'];
 
 export function SimulateView() {
-  const [activeScenario, setActiveScenario] = useState<ScenarioConfig | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [result, setResult] = useState<SimulationResult | null>(null);
-
-  // Scenario builder state
-  const [scenarioName, setScenarioName] = useState('');
   const [scenarioType, setScenarioType] = useState<ScenarioType>('disruption');
-  const [disruptionParams, setDisruptionParams] = useState({
-    airport: 'ATL',
-    startTime: '14:00',
-    duration: 4,
-    impactType: 'Ground delay program',
-    delayPerFlight: 45,
-  });
+  const [params, setParams] = useState({ airport: 'ATL', startTime: '14:00', duration: 4, impactType: 'Ground delay program', delayPerFlight: 45 });
 
   const runSimulation = async () => {
     setIsRunning(true);
-
     try {
-      // Call real API based on scenario type
       if (scenarioType === 'disruption') {
         const apiResult = await api.simulateDisruption({
-          airport: disruptionParams.airport,
-          start_time: disruptionParams.startTime,
-          duration_hours: disruptionParams.duration,
-          impact_type: disruptionParams.impactType,
-          delay_per_flight: disruptionParams.delayPerFlight,
+          airport: params.airport, start_time: params.startTime, duration_hours: params.duration,
+          impact_type: params.impactType, delay_per_flight: params.delayPerFlight,
         });
-
-        // Map API response to our SimulationResult interface
-        const mappedResult: SimulationResult = {
+        setResult({
           baseline: {
-            completionFactor: apiResult.data.baseline.completion_factor,
-            otp: apiResult.data.baseline.otp,
-            passengersDisrupted: apiResult.data.baseline.passengers_disrupted,
-            recoveryTime: apiResult.data.baseline.recovery_time_hours,
-            revenueImpact: apiResult.data.baseline.revenue_impact,
-            rasmImpact: apiResult.data.baseline.rasm_impact,
+            completionFactor: apiResult.data.baseline.completion_factor, otp: apiResult.data.baseline.otp,
+            passengersDisrupted: apiResult.data.baseline.passengers_disrupted, recoveryTime: apiResult.data.baseline.recovery_time_hours,
+            revenueImpact: apiResult.data.baseline.revenue_impact, rasmImpact: apiResult.data.baseline.rasm_impact,
           },
           scenario: {
-            completionFactor: apiResult.data.scenario_impact.completion_factor,
-            otp: apiResult.data.scenario_impact.otp,
-            passengersDisrupted: apiResult.data.scenario_impact.passengers_disrupted,
-            recoveryTime: apiResult.data.scenario_impact.recovery_time_hours,
-            revenueImpact: apiResult.data.scenario_impact.revenue_impact,
-            rasmImpact: apiResult.data.scenario_impact.rasm_impact,
+            completionFactor: apiResult.data.scenario_impact.completion_factor, otp: apiResult.data.scenario_impact.otp,
+            passengersDisrupted: apiResult.data.scenario_impact.passengers_disrupted, recoveryTime: apiResult.data.scenario_impact.recovery_time_hours,
+            revenueImpact: apiResult.data.scenario_impact.revenue_impact, rasmImpact: apiResult.data.scenario_impact.rasm_impact,
           },
-          vulnerableFlights: apiResult.data.vulnerable_flights.map((f) => ({
-            flight: f.flight,
-            route: f.route,
-            time: f.time,
-            passengersAffected: f.passengers_affected,
-          })),
+          vulnerableFlights: apiResult.data.vulnerable_flights.map((f) => ({ flight: f.flight, route: f.route, time: f.time, passengersAffected: f.passengers_affected })),
           recommendedMitigations: apiResult.data.recommended_mitigations,
-        };
-
-        setResult(mappedResult);
+        });
       } else {
-        // For non-disruption scenarios, use demo data (fallback)
-        // TODO: Add more scenario type APIs when available
-        const demoResult: SimulationResult = {
-          baseline: {
-            completionFactor: 98.2,
-            otp: 81,
-            passengersDisrupted: 120,
-            recoveryTime: 0,
-            revenueImpact: 0,
-            rasmImpact: 0,
-          },
-          scenario: {
-            completionFactor: 96.5,
-            otp: 74,
-            passengersDisrupted: 890,
-            recoveryTime: 3.2,
-            revenueImpact: -120000,
-            rasmImpact: -0.04,
-          },
+        // Demo data for other scenario types
+        setResult({
+          baseline: { completionFactor: 98.2, otp: 81, passengersDisrupted: 120, recoveryTime: 0, revenueImpact: 0, rasmImpact: 0 },
+          scenario: { completionFactor: 94.1, otp: 62, passengersDisrupted: 2840, recoveryTime: 6.2, revenueImpact: -340000, rasmImpact: -0.08 },
           vulnerableFlights: [
-            { flight: 'NK234', route: 'MCO-DTW', time: '10:30', passengersAffected: 180 },
-            { flight: 'NK567', route: 'FLL-LAS', time: '12:15', passengersAffected: 145 },
+            { flight: 'NK234', route: 'ATL-MCO', time: '15:30', passengersAffected: 420 },
+            { flight: 'NK567', route: 'ATL-FLL', time: '16:15', passengersAffected: 380 },
           ],
-          recommendedMitigations: [
-            'Monitor situation and prepare contingency plans',
-            'Pre-position crew at affected stations',
-          ],
-        };
-        setResult(demoResult);
+          recommendedMitigations: ['Pre-cancel lowest-load flights', 'Pre-position spare aircraft', 'Call reserve crews'],
+        });
       }
-
-      setActiveScenario({
-        name: scenarioName || `${disruptionParams.airport} Weather Impact`,
-        type: scenarioType,
-        parameters: disruptionParams,
-      });
-    } catch (error) {
-      console.error('Simulation failed:', error);
-      // Fallback to demo data on API error
-      const fallbackResult: SimulationResult = {
-        baseline: {
-          completionFactor: 98.2,
-          otp: 81,
-          passengersDisrupted: 120,
-          recoveryTime: 0,
-          revenueImpact: 0,
-          rasmImpact: 0,
-        },
-        scenario: {
-          completionFactor: 94.1,
-          otp: 62,
-          passengersDisrupted: 2840,
-          recoveryTime: 6.2,
-          revenueImpact: -340000,
-          rasmImpact: -0.08,
-        },
-        vulnerableFlights: [
-          { flight: 'NK234', route: 'ATL-MCO', time: '15:30', passengersAffected: 420 },
-          { flight: 'NK567', route: 'ATL-FLL', time: '16:15', passengersAffected: 380 },
-          { flight: 'NK891', route: 'ATL-DEN', time: '14:45', passengersAffected: 290 },
-        ],
-        recommendedMitigations: [
-          '[Demo Data] Pre-cancel lowest-load flights',
-          '[Demo Data] Pre-position spare aircraft',
-          '[Demo Data] Call reserve crews',
-        ],
-      };
-      setResult(fallbackResult);
-      setActiveScenario({
-        name: scenarioName || `${disruptionParams.airport} Weather Impact`,
-        type: scenarioType,
-        parameters: disruptionParams,
+    } catch {
+      setResult({
+        baseline: { completionFactor: 98.2, otp: 81, passengersDisrupted: 120, recoveryTime: 0, revenueImpact: 0, rasmImpact: 0 },
+        scenario: { completionFactor: 94.1, otp: 62, passengersDisrupted: 2840, recoveryTime: 6.2, revenueImpact: -340000, rasmImpact: -0.08 },
+        vulnerableFlights: [{ flight: 'NK234', route: 'ATL-MCO', time: '15:30', passengersAffected: 420 }],
+        recommendedMitigations: ['[Demo] Pre-cancel lowest-load flights', '[Demo] Pre-position spare aircraft'],
       });
     } finally {
       setIsRunning(false);
     }
   };
 
-  const getDelta = (baseline: number, scenario: number) => {
-    const delta = scenario - baseline;
-    return {
-      value: delta,
-      isPositive: delta > 0,
-      isNegative: delta < 0,
-    };
-  };
-
   return (
-    <div className="h-full overflow-auto p-6 bg-slate-100">
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-3">
-              <FlaskConical className="w-7 h-7 text-[#002855]" />
-              Scenario Simulator
-            </h1>
-            <p className="text-sm text-slate-500 mt-1">
-              Test what-if scenarios before making decisions
-            </p>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-3 gap-6">
+    <div className="h-full overflow-auto p-4 bg-white">
+      <div className="max-w-5xl mx-auto">
+        <div className="grid grid-cols-3 gap-4">
           {/* Scenario Builder */}
-          <div className="col-span-1">
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
-              <div className="p-4 border-b border-slate-200">
-                <h2 className="font-semibold text-slate-800">Build Scenario</h2>
-              </div>
+          <div className="border border-slate-200 rounded p-4 space-y-4">
+            <div className="text-sm font-medium">Build Scenario</div>
 
-              <div className="p-4 space-y-4">
-                {/* Scenario Name */}
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Scenario Name
-                  </label>
-                  <input
-                    type="text"
-                    value={scenarioName}
-                    onChange={(e) => setScenarioName(e.target.value)}
-                    placeholder="Weather impact ATL tomorrow"
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#002855] focus:border-transparent"
-                  />
-                </div>
-
-                {/* Scenario Type */}
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-2">
-                    Scenario Type
-                  </label>
-                  <div className="grid grid-cols-2 gap-2">
-                    {(Object.entries(SCENARIO_TEMPLATES) as [ScenarioType, typeof SCENARIO_TEMPLATES.schedule][]).map(
-                      ([type, config]) => {
-                        const Icon = config.icon;
-                        return (
-                          <button
-                            key={type}
-                            onClick={() => setScenarioType(type)}
-                            className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-left transition-all ${
-                              scenarioType === type
-                                ? 'border-[#002855] bg-blue-50 text-[#002855]'
-                                : 'border-slate-200 hover:border-slate-300'
-                            }`}
-                          >
-                            <Icon className="w-4 h-4" />
-                            <span className="text-sm font-medium">{config.label}</span>
-                          </button>
-                        );
-                      }
-                    )}
-                  </div>
-                </div>
-
-                {/* Disruption Parameters */}
-                {scenarioType === 'disruption' && (
-                  <div className="space-y-4 pt-4 border-t border-slate-200">
-                    <h3 className="text-sm font-semibold text-slate-700">Disruption Parameters</h3>
-
-                    <div>
-                      <label className="block text-xs text-slate-500 mb-1">Airport</label>
-                      <select
-                        value={disruptionParams.airport}
-                        onChange={(e) =>
-                          setDisruptionParams({ ...disruptionParams, airport: e.target.value })
-                        }
-                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#002855]"
-                      >
-                        {AIRPORTS.map((apt) => (
-                          <option key={apt} value={apt}>
-                            {apt}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-xs text-slate-500 mb-1">Start Time</label>
-                        <input
-                          type="time"
-                          value={disruptionParams.startTime}
-                          onChange={(e) =>
-                            setDisruptionParams({ ...disruptionParams, startTime: e.target.value })
-                          }
-                          className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#002855]"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-slate-500 mb-1">Duration (hrs)</label>
-                        <input
-                          type="number"
-                          value={disruptionParams.duration}
-                          onChange={(e) =>
-                            setDisruptionParams({
-                              ...disruptionParams,
-                              duration: parseInt(e.target.value),
-                            })
-                          }
-                          min={1}
-                          max={24}
-                          className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#002855]"
-                        />
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs text-slate-500 mb-1">Impact Type</label>
-                      <select
-                        value={disruptionParams.impactType}
-                        onChange={(e) =>
-                          setDisruptionParams({ ...disruptionParams, impactType: e.target.value })
-                        }
-                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#002855]"
-                      >
-                        {DISRUPTION_TYPES.map((type) => (
-                          <option key={type} value={type}>
-                            {type}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs text-slate-500 mb-1">
-                        Delay per Flight (min)
-                      </label>
-                      <input
-                        type="number"
-                        value={disruptionParams.delayPerFlight}
-                        onChange={(e) =>
-                          setDisruptionParams({
-                            ...disruptionParams,
-                            delayPerFlight: parseInt(e.target.value),
-                          })
-                        }
-                        min={0}
-                        max={180}
-                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#002855]"
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {/* Run Button */}
+            {/* Type selector */}
+            <div className="flex gap-2">
+              {(['disruption', 'equipment', 'schedule'] as ScenarioType[]).map((t) => (
                 <button
-                  onClick={runSimulation}
-                  disabled={isRunning}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-[#002855] text-white rounded-lg hover:bg-[#001a3d] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  key={t}
+                  onClick={() => setScenarioType(t)}
+                  className={`px-3 py-1 text-sm rounded ${scenarioType === t ? 'bg-[#002855] text-white' : 'border border-slate-200'}`}
                 >
-                  {isRunning ? (
-                    <>
-                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      Running Simulation...
-                    </>
-                  ) : (
-                    <>
-                      <Play className="w-5 h-5" />
-                      Run Simulation
-                    </>
-                  )}
+                  {t.charAt(0).toUpperCase() + t.slice(1)}
                 </button>
-              </div>
+              ))}
             </div>
+
+            {scenarioType === 'disruption' && (
+              <div className="space-y-3 text-sm">
+                <div>
+                  <label className="text-xs text-slate-500">Airport</label>
+                  <select value={params.airport} onChange={(e) => setParams({ ...params, airport: e.target.value })}
+                    className="w-full mt-1 px-2 py-1.5 border border-slate-200 rounded">
+                    {AIRPORTS.map((a) => <option key={a} value={a}>{a}</option>)}
+                  </select>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-xs text-slate-500">Start</label>
+                    <input type="time" value={params.startTime} onChange={(e) => setParams({ ...params, startTime: e.target.value })}
+                      className="w-full mt-1 px-2 py-1.5 border border-slate-200 rounded" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-500">Hours</label>
+                    <input type="number" value={params.duration} onChange={(e) => setParams({ ...params, duration: parseInt(e.target.value) })}
+                      min={1} max={24} className="w-full mt-1 px-2 py-1.5 border border-slate-200 rounded" />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500">Delay/Flight (min)</label>
+                  <input type="number" value={params.delayPerFlight} onChange={(e) => setParams({ ...params, delayPerFlight: parseInt(e.target.value) })}
+                    min={0} max={180} className="w-full mt-1 px-2 py-1.5 border border-slate-200 rounded" />
+                </div>
+              </div>
+            )}
+
+            <button onClick={runSimulation} disabled={isRunning}
+              className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-[#002855] text-white text-sm rounded disabled:opacity-50">
+              {isRunning ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Play className="w-4 h-4" />}
+              {isRunning ? 'Running...' : 'Run Simulation'}
+            </button>
           </div>
 
           {/* Results */}
-          <div className="col-span-2">
+          <div className="col-span-2 space-y-4">
             {!result && !isRunning && (
-              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-12 text-center">
-                <FlaskConical className="w-16 h-16 text-slate-300 mx-auto mb-4" />
-                <h3 className="text-lg font-semibold text-slate-600 mb-2">No Simulation Running</h3>
-                <p className="text-sm text-slate-500">
-                  Configure a scenario and click "Run Simulation" to see results
-                </p>
+              <div className="border border-slate-200 rounded p-8 text-center text-slate-400">
+                Configure scenario and run simulation
               </div>
             )}
 
             {isRunning && (
-              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-12 text-center">
-                <div className="w-16 h-16 border-4 border-[#002855] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-                <h3 className="text-lg font-semibold text-slate-800 mb-2">Running Simulation</h3>
-                <p className="text-sm text-slate-500">
-                  Analyzing {scenarioType === 'disruption' ? `${disruptionParams.airport} ${disruptionParams.impactType}` : 'scenario'}...
-                </p>
+              <div className="border border-slate-200 rounded p-8 text-center">
+                <div className="w-8 h-8 border-2 border-[#002855] border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+                <span className="text-sm text-slate-500">Running simulation...</span>
               </div>
             )}
 
             {result && !isRunning && (
-              <div className="space-y-4">
-                {/* Scenario Header */}
-                <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h2 className="text-lg font-semibold text-slate-800">
-                        {activeScenario?.name || 'Simulation Results'}
-                      </h2>
-                      <p className="text-sm text-slate-500">
-                        {disruptionParams.airport} • {disruptionParams.startTime} • {disruptionParams.duration}hr {disruptionParams.impactType}
-                      </p>
-                    </div>
-                    <span className="px-3 py-1 bg-amber-100 text-amber-700 rounded-full text-sm font-medium">
-                      Completed
-                    </span>
-                  </div>
-                </div>
-
-                {/* Comparison Table */}
-                <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                  <div className="p-4 border-b border-slate-200 bg-slate-50">
-                    <h3 className="font-semibold text-slate-800">Baseline vs Scenario</h3>
-                  </div>
-                  <table className="w-full">
-                    <thead className="bg-slate-50">
-                      <tr>
-                        <th className="text-left px-6 py-3 text-sm font-semibold text-slate-700">Metric</th>
-                        <th className="text-right px-6 py-3 text-sm font-semibold text-slate-700">Baseline</th>
-                        <th className="text-right px-6 py-3 text-sm font-semibold text-slate-700">Scenario</th>
-                        <th className="text-right px-6 py-3 text-sm font-semibold text-slate-700">Delta</th>
+              <>
+                {/* Comparison */}
+                <div className="border border-slate-200 rounded">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b bg-slate-50 text-left text-xs text-slate-500 uppercase">
+                        <th className="px-3 py-2">Metric</th>
+                        <th className="px-3 py-2 text-right">Baseline</th>
+                        <th className="px-3 py-2 text-right">Scenario</th>
+                        <th className="px-3 py-2 text-right">Delta</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100">
+                    <tbody className="divide-y">
                       {[
-                        { metric: 'Completion Factor', baseline: result.baseline.completionFactor, scenario: result.scenario.completionFactor, unit: '%' },
-                        { metric: 'On-Time Performance', baseline: result.baseline.otp, scenario: result.scenario.otp, unit: '%' },
-                        { metric: 'Passengers Disrupted', baseline: result.baseline.passengersDisrupted, scenario: result.scenario.passengersDisrupted, unit: '' },
-                        { metric: 'Recovery Time', baseline: result.baseline.recoveryTime || '-', scenario: `${result.scenario.recoveryTime} hours`, unit: '' },
-                        { metric: 'Revenue Impact', baseline: '$0', scenario: `$${(result.scenario.revenueImpact / 1000).toFixed(0)}K`, unit: '' },
-                        { metric: 'RASM Impact', baseline: '0.00¢', scenario: `${result.scenario.rasmImpact}¢`, unit: '' },
-                      ].map((row, i) => {
-                        const delta = typeof row.baseline === 'number' && typeof row.scenario === 'number'
-                          ? getDelta(row.baseline, row.scenario as number)
-                          : null;
+                        { m: 'Completion', b: result.baseline.completionFactor, s: result.scenario.completionFactor, u: '%' },
+                        { m: 'OTP', b: result.baseline.otp, s: result.scenario.otp, u: '%' },
+                        { m: 'PAX Disrupted', b: result.baseline.passengersDisrupted, s: result.scenario.passengersDisrupted, u: '', invert: true },
+                        { m: 'Recovery', b: 0, s: result.scenario.recoveryTime, u: 'h', invert: true },
+                        { m: 'Revenue', b: 0, s: result.scenario.revenueImpact / 1000, u: 'K' },
+                      ].map((r, i) => {
+                        const d = r.s - r.b;
+                        const bad = r.invert ? d > 0 : d < 0;
                         return (
-                          <tr key={i} className="hover:bg-slate-50">
-                            <td className="px-6 py-3 text-sm font-medium text-slate-800">{row.metric}</td>
-                            <td className="px-6 py-3 text-sm text-slate-600 text-right">
-                              {typeof row.baseline === 'number' ? `${row.baseline}${row.unit}` : row.baseline}
-                            </td>
-                            <td className="px-6 py-3 text-sm text-slate-600 text-right">
-                              {typeof row.scenario === 'number' ? `${row.scenario}${row.unit}` : row.scenario}
-                            </td>
-                            <td className="px-6 py-3 text-sm text-right">
-                              {delta ? (
-                                <span className={`flex items-center justify-end gap-1 ${
-                                  row.metric === 'Passengers Disrupted'
-                                    ? (delta.isPositive ? 'text-red-600' : 'text-emerald-600')
-                                    : (delta.isNegative ? 'text-red-600' : delta.isPositive ? 'text-emerald-600' : 'text-slate-600')
-                                }`}>
-                                  {delta.isPositive ? <TrendingUp className="w-4 h-4" /> : delta.isNegative ? <TrendingDown className="w-4 h-4" /> : <Minus className="w-4 h-4" />}
-                                  {delta.value > 0 ? '+' : ''}{delta.value}{row.unit}
-                                </span>
-                              ) : '-'}
+                          <tr key={i}>
+                            <td className="px-3 py-2">{r.m}</td>
+                            <td className="px-3 py-2 text-right">{r.b}{r.u}</td>
+                            <td className="px-3 py-2 text-right">{r.s.toFixed(r.u === '%' ? 1 : 0)}{r.u}</td>
+                            <td className={`px-3 py-2 text-right font-medium ${bad ? 'text-red-600' : d > 0 ? 'text-emerald-600' : ''}`}>
+                              {d > 0 ? '+' : ''}{d.toFixed(r.u === '%' ? 1 : 0)}{r.u}
                             </td>
                           </tr>
                         );
@@ -499,62 +178,35 @@ export function SimulateView() {
                 </div>
 
                 {/* Vulnerable Flights */}
-                <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
-                  <div className="p-4 border-b border-slate-200 bg-amber-50">
-                    <h3 className="font-semibold text-amber-800 flex items-center gap-2">
-                      <AlertTriangle className="w-5 h-5" />
-                      Vulnerable Flights (Highest Downstream Impact)
-                    </h3>
+                <div className="border border-slate-200 rounded">
+                  <div className="px-3 py-2 bg-amber-50 border-b border-amber-200 flex items-center gap-2 text-sm font-medium text-amber-800">
+                    <AlertTriangle className="w-4 h-4" /> Vulnerable Flights
                   </div>
-                  <div className="divide-y divide-slate-100">
-                    {result.vulnerableFlights.map((flight, i) => (
-                      <div key={i} className="flex items-center justify-between px-6 py-3 hover:bg-slate-50">
-                        <div className="flex items-center gap-4">
-                          <span className="font-mono font-bold text-[#002855]">{flight.flight}</span>
-                          <span className="text-slate-600">{flight.route}</span>
-                          <span className="text-sm text-slate-500">{flight.time}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Users className="w-4 h-4 text-slate-400" />
-                          <span className="text-sm font-medium text-slate-700">
-                            {flight.passengersAffected} passengers affected
-                          </span>
-                        </div>
+                  <div className="divide-y">
+                    {result.vulnerableFlights.map((f, i) => (
+                      <div key={i} className="px-3 py-2 flex justify-between text-sm">
+                        <span><span className="font-mono font-medium">{f.flight}</span> {f.route} <span className="text-slate-400">{f.time}</span></span>
+                        <span className="text-slate-500">{f.passengersAffected} PAX</span>
                       </div>
                     ))}
                   </div>
                 </div>
 
-                {/* Recommended Mitigations */}
-                <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
-                  <div className="p-4 border-b border-slate-200 bg-emerald-50">
-                    <h3 className="font-semibold text-emerald-800 flex items-center gap-2">
-                      <CheckCircle className="w-5 h-5" />
-                      Recommended Mitigations
-                    </h3>
+                {/* Mitigations */}
+                <div className="border border-slate-200 rounded">
+                  <div className="px-3 py-2 bg-emerald-50 border-b border-emerald-200 flex items-center gap-2 text-sm font-medium text-emerald-800">
+                    <CheckCircle className="w-4 h-4" /> Recommended Actions
                   </div>
-                  <div className="p-4 space-y-3">
-                    {result.recommendedMitigations.map((mitigation, i) => (
-                      <div key={i} className="flex items-start gap-3">
-                        <div className="w-6 h-6 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
-                          <span className="text-xs font-bold text-emerald-700">{i + 1}</span>
-                        </div>
-                        <span className="text-sm text-slate-700">{mitigation}</span>
+                  <div className="p-3 space-y-2">
+                    {result.recommendedMitigations.map((m, i) => (
+                      <div key={i} className="flex items-center gap-2 text-sm">
+                        <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 text-xs flex items-center justify-center font-medium">{i + 1}</span>
+                        {m}
                       </div>
                     ))}
                   </div>
-                  <div className="p-4 border-t border-slate-200 flex gap-3">
-                    <button className="flex items-center gap-2 px-4 py-2 bg-[#002855] text-white rounded-lg hover:bg-[#001a3d] transition-colors">
-                      <CheckCircle className="w-4 h-4" />
-                      Apply Mitigations
-                    </button>
-                    <button className="flex items-center gap-2 px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors">
-                      <Shuffle className="w-4 h-4" />
-                      Run Recovery Optimizer
-                    </button>
-                  </div>
                 </div>
-              </div>
+              </>
             )}
           </div>
         </div>

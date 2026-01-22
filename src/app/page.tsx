@@ -227,7 +227,7 @@ export default function Home() {
       <ConnectionStatus />
 
       {/* Main content area below header */}
-      <div className="flex flex-1 pt-[120px] overflow-hidden">
+      <div className="flex flex-1 pt-14 overflow-hidden">
         <Sidebar dataStatus={dataStatus} />
         <main className="flex-1 overflow-auto bg-slate-100">
           {renderView()}
