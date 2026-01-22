@@ -68,12 +68,16 @@ export function ControlRoom() {
 
         // Frequency adds
         markets.filter(m => m.nk_market_share > 0.5).slice(0, 2).forEach((m, i) => {
+          // Revenue from one additional flight: 180 seats × 85% LF × fare
+          // Profit margin ~12-15% of revenue for ULCC
+          const flightRevenue = (m.nk_avg_fare || 120) * 180 * 0.85;
+          const flightProfit = Math.round(flightRevenue * 0.12);
           newDecisions.push({
             id: `freq-${i}`,
             title: 'Add frequency',
             route: m.market_key,
             type: 'frequency',
-            profitDelta: Math.round((m.nk_avg_fare || 120) * 150 * 0.85),
+            profitDelta: flightProfit,
             rasmDelta: 0.08,
             confidence: 'high',
             status: 'pending',
