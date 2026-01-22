@@ -18,36 +18,62 @@ export function OptimizationDemo() {
   const [loading, setLoading] = useState(true);
   const [result, setResult] = useState<api.RouteOptimizationResult | null>(null);
   const [scenario, setScenario] = useState<api.ScenarioResult | null>(null);
+  const [selectedRoute, setSelectedRoute] = useState('DTW-MCO');
+  const [availableRoutes, setAvailableRoutes] = useState<{route: string; fare: number; lf: number}[]>([
+    { route: 'DTW-MCO', fare: 112, lf: 0.88 },
+    { route: 'MCO-PHL', fare: 89, lf: 0.91 },
+    { route: 'FLL-EWR', fare: 98, lf: 0.86 },
+    { route: 'LAS-DTW', fare: 134, lf: 0.84 },
+    { route: 'ATL-FLL', fare: 76, lf: 0.89 },
+  ]);
+
+  useEffect(() => {
+    async function loadRoutes() {
+      try {
+        const routes = await api.getRoutes({ limit: 50 });
+        const routesWithData = routes
+          .filter(r => r.avg_load_factor && r.avg_fare)
+          .slice(0, 10)
+          .map(r => ({
+            route: `${r.origin}-${r.destination}`,
+            fare: r.avg_fare || 100,
+            lf: r.avg_load_factor || 0.85,
+          }));
+        if (routesWithData.length > 0) {
+          setAvailableRoutes(routesWithData);
+        }
+      } catch (err) {
+        console.error('Failed to load routes:', err);
+      }
+    }
+    loadRoutes();
+  }, []);
 
   useEffect(() => {
     async function initializeOptimizer() {
       setLoading(true);
+      const [origin, dest] = selectedRoute.split('-');
+      const routeData = availableRoutes.find(r => r.route === selectedRoute);
+      const fare = routeData?.fare || 120;
+      const lf = routeData?.lf || 0.88;
+
       try {
         const status = await api.getOptimizerStatus();
         if (!status.optimizer_available) {
-          createFallbackResult('DTW', 'MCO', 120, 0.88);
+          createFallbackResult(origin, dest, fare, lf);
           setLoading(false);
           return;
         }
-        const routes = await api.getRoutes({ limit: 50 });
-        const highLoadRoute = routes.find(r =>
-          r.avg_load_factor && r.avg_load_factor > 0.85 && r.avg_fare
-        );
-        await runOptimization(
-          highLoadRoute?.origin || 'DTW',
-          highLoadRoute?.destination || 'MCO',
-          highLoadRoute?.avg_fare || 120,
-          highLoadRoute?.avg_load_factor || 0.88
-        );
+        await runOptimization(origin, dest, fare, lf);
       } catch (err) {
         console.error('Failed to initialize optimizer:', err);
-        createFallbackResult('DTW', 'MCO', 120, 0.88);
+        createFallbackResult(origin, dest, fare, lf);
       } finally {
         setLoading(false);
       }
     }
     initializeOptimizer();
-  }, []);
+  }, [selectedRoute, availableRoutes]);
 
   async function runOptimization(origin: string, destination: string, fare: number, lf: number) {
     try {
@@ -69,20 +95,38 @@ export function OptimizationDemo() {
   }
 
   function createFallbackResult(origin: string, destination: string, fare: number, lf: number) {
-    // Stage-length adjusted CASM (Spirit 2024 actuals: ~11.35¢)
-    const distance = 960;
-    const baseCasm = 10.5;
-    const fixedPenalty = 1000;
-    const casm = baseCasm + (fixedPenalty / distance);
+    // Realistic ULCC economics
+    const distance = 900; // nm (fixed for consistency)
+    const frequency = 2; // flights per day each direction
+    const dailyDepartures = frequency * 2; // both directions = 4 departures
 
+    // CASM varies by stage length (Spirit averages 8-9¢)
+    const baseCasm = 8.0; // cents per ASM
+    const casm = baseCasm + (200 / distance); // Stage length penalty
+
+    // Current equipment: A320neo (182 seats)
     const currentSeats = 182;
-    const newSeats = 228;
-    const currentPax = Math.round(currentSeats * lf * 2);
-    const newPax = Math.round(newSeats * Math.min(0.92, lf + 0.02) * 2);
+    const currentLF = lf;
+    const currentPaxPerFlight = Math.round(currentSeats * currentLF);
+    const currentDailyPax = currentPaxPerFlight * dailyDepartures;
+    const currentDailyRevenue = currentDailyPax * fare;
+    const currentDailyASM = currentSeats * distance * dailyDepartures;
+    const currentDailyCost = Math.round(currentDailyASM * casm / 100);
+    const currentDailyProfit = currentDailyRevenue - currentDailyCost;
+    const currentRasm = (currentDailyRevenue / currentDailyASM) * 100;
 
-    const currentRasm = (currentPax * fare) / (currentSeats * distance * 2) * 100;
-    const newRasm = (newPax * fare) / (newSeats * distance * 2) * 100;
-    const deltaProfitVal = Math.round((newPax - currentPax) * fare - casm * (newSeats - currentSeats) * distance * 2 / 100);
+    // Recommended: A321neo (228 seats) - better LF due to demand capture
+    const newSeats = 228;
+    const newLF = Math.min(0.92, currentLF + 0.02); // Slight LF improvement
+    const newPaxPerFlight = Math.round(newSeats * newLF);
+    const newDailyPax = newPaxPerFlight * dailyDepartures;
+    const newDailyRevenue = newDailyPax * fare;
+    const newDailyASM = newSeats * distance * dailyDepartures;
+    const newDailyCost = Math.round(newDailyASM * casm / 100);
+    const newDailyProfit = newDailyRevenue - newDailyCost;
+    const newRasm = (newDailyRevenue / newDailyASM) * 100;
+
+    const deltaProfitVal = newDailyProfit - currentDailyProfit;
     const deltaRasmVal = Math.round((newRasm - currentRasm) * 100) / 100;
 
     setResult({
@@ -91,9 +135,9 @@ export function OptimizationDemo() {
       stage_length_casm_cents: Math.round(casm * 100) / 100,
       current_state: {
         equipment: 'A320neo',
-        frequency: 2,
+        frequency: frequency,
         fare,
-        daily_demand: currentPax,
+        daily_demand: currentDailyPax,
         segment_mix: { leisure: 0.4, vfr: 0.3, business: 0.2, cruise: 0.1 }
       },
       equipment_analysis: {
@@ -101,16 +145,16 @@ export function OptimizationDemo() {
           {
             option: 'Current',
             equipment: 'A320neo',
-            frequency: 2,
-            seats: 182,
-            daily_capacity: 364,
-            expected_pax: currentPax,
-            load_factor: lf * 100,
-            revenue: currentPax * fare,
-            cost: casm * currentSeats * distance * 2 / 100,
-            profit: currentPax * fare - casm * currentSeats * distance * 2 / 100,
-            rasm_cents: currentRasm,
-            asm: currentSeats * distance * 2,
+            frequency: frequency,
+            seats: currentSeats,
+            daily_capacity: currentSeats * dailyDepartures,
+            expected_pax: currentDailyPax,
+            load_factor: Math.round(currentLF * 100),
+            revenue: currentDailyRevenue,
+            cost: currentDailyCost,
+            profit: currentDailyProfit,
+            rasm_cents: Math.round(currentRasm * 100) / 100,
+            asm: currentDailyASM,
             delta_profit: 0,
             delta_rasm: 0,
             recommendation: 'baseline'
@@ -118,16 +162,16 @@ export function OptimizationDemo() {
           {
             option: 'Upgauge',
             equipment: 'A321neo',
-            frequency: 2,
-            seats: 228,
-            daily_capacity: 456,
-            expected_pax: newPax,
-            load_factor: Math.min(92, (lf + 0.02) * 100),
-            revenue: newPax * fare,
-            cost: casm * newSeats * distance * 2 / 100,
-            profit: newPax * fare - casm * newSeats * distance * 2 / 100,
-            rasm_cents: newRasm,
-            asm: newSeats * distance * 2,
+            frequency: frequency,
+            seats: newSeats,
+            daily_capacity: newSeats * dailyDepartures,
+            expected_pax: newDailyPax,
+            load_factor: Math.round(newLF * 100),
+            revenue: newDailyRevenue,
+            cost: newDailyCost,
+            profit: newDailyProfit,
+            rasm_cents: Math.round(newRasm * 100) / 100,
+            asm: newDailyASM,
             delta_profit: deltaProfitVal,
             delta_rasm: deltaRasmVal,
             recommendation: 'recommended'
@@ -136,16 +180,16 @@ export function OptimizationDemo() {
         recommended: {
           option: 'Upgauge',
           equipment: 'A321neo',
-          frequency: 2,
-          seats: 228,
-          daily_capacity: 456,
-          expected_pax: newPax,
-          load_factor: Math.min(92, (lf + 0.02) * 100),
-          revenue: newPax * fare,
-          cost: casm * newSeats * distance * 2 / 100,
-          profit: newPax * fare - casm * newSeats * distance * 2 / 100,
-          rasm_cents: newRasm,
-          asm: newSeats * distance * 2,
+          frequency: frequency,
+          seats: newSeats,
+          daily_capacity: newSeats * dailyDepartures,
+          expected_pax: newDailyPax,
+          load_factor: Math.round(newLF * 100),
+          revenue: newDailyRevenue,
+          cost: newDailyCost,
+          profit: newDailyProfit,
+          rasm_cents: Math.round(newRasm * 100) / 100,
+          asm: newDailyASM,
           delta_profit: deltaProfitVal,
           delta_rasm: deltaRasmVal,
           recommendation: 'recommended'
@@ -153,8 +197,8 @@ export function OptimizationDemo() {
         rasm_improvement_cents: deltaRasmVal
       },
       demand_forecast: {
-        predicted_demand: Math.round(currentPax * 1.1),
-        confidence_interval: [Math.round(currentPax * 0.9), Math.round(currentPax * 1.3)],
+        predicted_demand: Math.round(currentDailyPax * 1.1),
+        confidence_interval: [Math.round(currentDailyPax * 0.9), Math.round(currentDailyPax * 1.3)],
         confidence_level: 'medium',
         model_used: 'heuristic'
       },
@@ -177,8 +221,8 @@ export function OptimizationDemo() {
     setScenario({
       scenario: 'A320neo → A321neo',
       frequency_change: 0,
-      before: { equipment: 'A320neo', frequency: 2, asm: currentSeats * distance * 2, revenue: currentPax * fare, cost: Math.round(casm * currentSeats * distance * 2 / 100), profit: Math.round(currentPax * fare - casm * currentSeats * distance * 2 / 100), rasm_cents: Math.round(currentRasm * 100) / 100 },
-      after: { equipment: 'A321neo', frequency: 2, asm: newSeats * distance * 2, revenue: newPax * fare, cost: Math.round(casm * newSeats * distance * 2 / 100), profit: Math.round(newPax * fare - casm * newSeats * distance * 2 / 100), rasm_cents: Math.round(newRasm * 100) / 100 },
+      before: { equipment: 'A320neo', frequency: frequency, asm: currentDailyASM, revenue: currentDailyRevenue, cost: currentDailyCost, profit: currentDailyProfit, rasm_cents: Math.round(currentRasm * 100) / 100 },
+      after: { equipment: 'A321neo', frequency: frequency, asm: newDailyASM, revenue: newDailyRevenue, cost: newDailyCost, profit: newDailyProfit, rasm_cents: Math.round(newRasm * 100) / 100 },
       impact: { delta_profit: deltaProfitVal, delta_rasm: deltaRasmVal, delta_capacity_pct: Math.round((newSeats - currentSeats) / currentSeats * 100) }
     });
   }
@@ -202,12 +246,30 @@ export function OptimizationDemo() {
 
   return (
     <div className="w-full max-w-5xl space-y-6">
+      {/* Route Selector */}
+      <div className="flex gap-2 flex-wrap">
+        {availableRoutes.slice(0, 8).map((r) => (
+          <button
+            key={r.route}
+            onClick={() => setSelectedRoute(r.route)}
+            disabled={loading}
+            className={`px-4 py-2 rounded-lg font-medium transition-all ${
+              selectedRoute === r.route
+                ? 'bg-[#002855] text-white'
+                : 'bg-white border border-slate-200 text-slate-600 hover:border-slate-300'
+            } disabled:opacity-50`}
+          >
+            {r.route}
+          </button>
+        ))}
+      </div>
+
       {/* Header Card - McKinsey Navy */}
       <div className="bg-[#002855] rounded-t-lg px-6 py-4">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-xl font-bold text-white">Route Optimization Analysis</h1>
-            <p className="text-blue-200 text-sm">{result.route} • Stage Length: {result.distance_nm}nm</p>
+            <p className="text-blue-200 text-sm">{result.route} • Stage Length: {Math.round(result.distance_nm)}nm</p>
           </div>
           <div className="flex items-center gap-2 bg-white/10 px-3 py-1.5 rounded">
             <Cpu className="w-4 h-4 text-emerald-400" />

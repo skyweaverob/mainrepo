@@ -104,7 +104,7 @@ export default function Home() {
 
       // OS-style Control Room - Primary Decision Interface
       case 'controlroom':
-        return <ControlRoom onHubClick={handleHubClick} />;
+        return <ControlRoom />;
 
       // Simulate - What-if scenario analysis
       case 'simulate':

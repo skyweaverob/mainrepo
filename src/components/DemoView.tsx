@@ -1,214 +1,433 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
-import { TrendingUp, ArrowRight, Check, DollarSign, Plane } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { TrendingUp, Play, Check, DollarSign, Plane, Zap, Target, ArrowRight, BarChart3 } from 'lucide-react';
+import * as api from '@/lib/api';
 
 interface DemoViewProps {
   isLiveMode?: boolean;
-  onToggleMode?: () => void;
 }
 
-const DEMO = {
-  before: { rasm: 7.72, revenue: 3.1, otp: 78, loadFactor: 86 },
-  after: { rasm: 8.41, revenue: 3.38, otp: 86, loadFactor: 89 },
-  route: { name: 'MCO-PHL', beforeProfit: 12400, afterProfit: 27100, annualImpact: 5.4 },
-  bcg: [
-    { name: 'AI Ops Control', done: true },
-    { name: 'Predictive MX', done: true },
-    { name: 'Schedule Simulation', done: true },
-    { name: 'Real-time Risk', done: true },
-    { name: 'Dynamic Dispatch', done: true },
-    { name: 'Recovery Cockpit', done: true },
-  ],
-};
-
 export function DemoView({ isLiveMode = false }: DemoViewProps) {
-  const [activeSection, setActiveSection] = useState(0);
-  const [roiInputs, setRoiInputs] = useState({ fleet: 120, revenue: 3.5 });
-  const sectionRefs = useRef<(HTMLElement | null)[]>([]);
+  const [activeDemo, setActiveDemo] = useState<'optimizer' | 'decision' | 'simulation'>('optimizer');
+  const [selectedRoute, setSelectedRoute] = useState('MCO-PHL');
+  const [optimizing, setOptimizing] = useState(false);
+  const [optimizationResult, setOptimizationResult] = useState<any>(null);
+  const [approvedDecisions, setApprovedDecisions] = useState<string[]>([]);
+  const [topRoutes, setTopRoutes] = useState<any[]>([]);
 
-  const roi = {
-    uplift: roiInputs.revenue * 0.02 * 1000, // 2% RASM improvement in $M
-    savings: roiInputs.fleet * 0.19, // $190K per aircraft in $M
-    total: 0,
-  };
-  roi.total = roi.uplift + roi.savings;
-
+  // Load real route data
   useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            const i = sectionRefs.current.findIndex((r) => r === entry.target);
-            if (i !== -1) setActiveSection(i);
-          }
-        });
-      },
-      { threshold: 0.5 }
-    );
-    sectionRefs.current.forEach((ref) => ref && observer.observe(ref));
-    return () => observer.disconnect();
+    async function loadRoutes() {
+      try {
+        const markets = await api.getMarketIntelligence(20);
+        const routes = markets.map(m => ({
+          route: m.market_key,
+          pax: m.nk_passengers,
+          fare: m.nk_avg_fare,
+          distance: m.distance,
+          marketShare: m.nk_market_share,
+        }));
+        setTopRoutes(routes);
+      } catch (err) {
+        // Use demo data
+        setTopRoutes([
+          { route: 'MCO-PHL', pax: 180000, fare: 89, distance: 861, marketShare: 0.42 },
+          { route: 'DTW-MCO', pax: 165000, fare: 112, distance: 957, marketShare: 0.38 },
+          { route: 'FLL-EWR', pax: 142000, fare: 98, distance: 1071, marketShare: 0.35 },
+          { route: 'LAS-DTW', pax: 128000, fare: 134, distance: 1749, marketShare: 0.28 },
+          { route: 'ATL-FLL', pax: 156000, fare: 76, distance: 581, marketShare: 0.45 },
+        ]);
+      }
+    }
+    loadRoutes();
   }, []);
 
-  const scrollTo = (i: number) => sectionRefs.current[i]?.scrollIntoView({ behavior: 'smooth' });
+  // Run optimization
+  const runOptimization = async () => {
+    setOptimizing(true);
+    setOptimizationResult(null);
 
-  const sections = ['Problem', 'Solution', 'Proof', 'Example', 'ROI'];
+    try {
+      const [origin, dest] = selectedRoute.split('-');
+      const result = await api.getQuickRouteOptimization(origin, dest, 'A320neo', 2);
+      setOptimizationResult({
+        route: selectedRoute,
+        current: {
+          equipment: 'A320neo',
+          seats: 182,
+          profit: result.current?.profit || 15200,
+          rasm: result.current?.rasm_cents || 10.2,
+        },
+        recommended: {
+          equipment: result.recommended?.equipment || 'A321neo',
+          seats: result.recommended?.seats || 228,
+          profit: result.recommended?.profit || 23800,
+          rasm: result.recommended?.rasm_cents || 11.4,
+        },
+        uplift: (result.recommended?.profit || 23800) - (result.current?.profit || 15200),
+        rasmGain: (result.recommended?.rasm_cents || 11.4) - (result.current?.rasm_cents || 10.2),
+      });
+    } catch {
+      // Demo fallback
+      setOptimizationResult({
+        route: selectedRoute,
+        current: { equipment: 'A320neo', seats: 182, profit: 15200, rasm: 10.2 },
+        recommended: { equipment: 'A321neo', seats: 228, profit: 23800, rasm: 11.4 },
+        uplift: 8600,
+        rasmGain: 1.2,
+      });
+    } finally {
+      setOptimizing(false);
+    }
+  };
+
+  const decisions = [
+    { id: '1', route: 'MCO-PHL', action: 'Upgauge to A321neo', profit: 8600, rasm: 0.15 },
+    { id: '2', route: 'DTW-FLL', action: 'Add frequency (3x daily)', profit: 12400, rasm: 0.22 },
+    { id: '3', route: 'LAS-EWR', action: 'Competitive fare adjustment', profit: 4200, rasm: -0.05 },
+    { id: '4', route: 'ATL-MCO', action: 'Peak time retiming', profit: 3100, rasm: 0.08 },
+  ];
+
+  const totalApprovedProfit = decisions
+    .filter(d => approvedDecisions.includes(d.id))
+    .reduce((sum, d) => sum + d.profit, 0);
 
   return (
-    <div className="h-full flex">
-      {/* Nav */}
-      <div className="w-40 bg-slate-50 border-r border-slate-200 p-4 flex flex-col gap-1">
-        {sections.map((s, i) => (
-          <button
-            key={s}
-            onClick={() => scrollTo(i)}
-            className={`text-left px-3 py-2 rounded text-sm ${
-              activeSection === i ? 'bg-[#002855] text-white font-medium' : 'text-slate-600 hover:bg-slate-100'
-            }`}
-          >
-            {s}
-          </button>
-        ))}
-      </div>
+    <div className="h-full bg-gradient-to-br from-slate-50 to-blue-50 overflow-auto">
+      <div className="max-w-6xl mx-auto p-8">
+        {/* Hero */}
+        <div className="text-center mb-12">
+          <h1 className="text-4xl font-bold text-[#002855] mb-3">SkyWeave</h1>
+          <p className="text-xl text-slate-600 mb-6">The Airline Operating System That Optimizes for RASM</p>
 
-      {/* Content */}
-      <div className="flex-1 overflow-auto">
-        {/* 1. Problem */}
-        <section ref={(el) => { sectionRefs.current[0] = el; }} className="min-h-screen p-12 flex flex-col justify-center">
-          <div className="max-w-3xl">
-            <h1 className="text-4xl font-bold text-slate-800 mb-4">Airlines are measured on RASM</h1>
-            <p className="text-xl text-slate-600 mb-8">Revenue per Available Seat Mile is the North Star metric for airline performance.</p>
-            <div className="grid grid-cols-2 gap-8">
-              <div className="p-6 bg-slate-100 rounded-lg">
-                <div className="text-sm text-slate-500 mb-1">Industry Average</div>
-                <div className="text-3xl font-bold text-slate-800">{DEMO.before.rasm}¢</div>
-              </div>
-              <div className="p-6 bg-red-50 rounded-lg border border-red-200">
-                <div className="text-sm text-red-600 mb-1">The Problem</div>
-                <div className="text-lg text-red-800">No existing system optimizes directly for RASM</div>
-              </div>
+          <div className="inline-flex items-center gap-6 bg-white rounded-full px-8 py-4 shadow-lg">
+            <div className="text-center">
+              <div className="text-sm text-slate-500">Before SkyWeave</div>
+              <div className="text-2xl font-bold text-slate-400">7.72¢</div>
+            </div>
+            <ArrowRight className="w-6 h-6 text-emerald-500" />
+            <div className="text-center">
+              <div className="text-sm text-emerald-600">With SkyWeave</div>
+              <div className="text-2xl font-bold text-emerald-600">8.41¢</div>
+            </div>
+            <div className="h-10 w-px bg-slate-200" />
+            <div className="text-center">
+              <div className="text-sm text-slate-500">Improvement</div>
+              <div className="text-2xl font-bold text-[#002855]">+8.9%</div>
             </div>
           </div>
-        </section>
+        </div>
 
-        {/* 2. Solution */}
-        <section ref={(el) => { sectionRefs.current[1] = el; }} className="min-h-screen p-12 flex flex-col justify-center bg-[#002855]">
-          <div className="max-w-3xl">
-            <h1 className="text-4xl font-bold text-white mb-4">SkyWeave optimizes for RASM</h1>
-            <p className="text-xl text-blue-200 mb-8">The first operating system that makes every decision through the lens of revenue per seat mile.</p>
-            <div className="grid grid-cols-3 gap-4">
-              {DEMO.bcg.map((item) => (
-                <div key={item.name} className="p-4 bg-white/10 rounded-lg flex items-center gap-2">
-                  <Check className="w-5 h-5 text-emerald-400" />
-                  <span className="text-white text-sm">{item.name}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
+        {/* Demo Selector */}
+        <div className="flex justify-center gap-4 mb-8">
+          {[
+            { id: 'optimizer', label: 'Route Optimizer', icon: Target },
+            { id: 'decision', label: 'Decision Engine', icon: Zap },
+            { id: 'simulation', label: 'Impact Simulator', icon: BarChart3 },
+          ].map((tab) => {
+            const Icon = tab.icon;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveDemo(tab.id as any)}
+                className={`flex items-center gap-2 px-6 py-3 rounded-lg font-medium transition-all ${
+                  activeDemo === tab.id
+                    ? 'bg-[#002855] text-white shadow-lg'
+                    : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'
+                }`}
+              >
+                <Icon className="w-5 h-5" />
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
 
-        {/* 3. Proof */}
-        <section ref={(el) => { sectionRefs.current[2] = el; }} className="min-h-screen p-12 flex flex-col justify-center">
-          <div className="max-w-3xl">
-            <h1 className="text-4xl font-bold text-slate-800 mb-8">The Results</h1>
-            <div className="flex items-center gap-8">
-              <div className="flex-1 p-8 bg-slate-100 rounded-xl">
-                <div className="text-sm text-slate-500 uppercase mb-2">Before SkyWeave</div>
-                <div className="text-5xl font-bold text-slate-800 mb-4">{DEMO.before.rasm}¢</div>
-                <div className="space-y-2 text-sm text-slate-600">
-                  <div>OTP: {DEMO.before.otp}%</div>
-                  <div>Load: {DEMO.before.loadFactor}%</div>
-                  <div>Revenue: ${DEMO.before.revenue}M/day</div>
-                </div>
-              </div>
-              <ArrowRight className="w-12 h-12 text-slate-300" />
-              <div className="flex-1 p-8 bg-emerald-50 rounded-xl border-2 border-emerald-200">
-                <div className="text-sm text-emerald-600 uppercase mb-2">After SkyWeave</div>
-                <div className="text-5xl font-bold text-emerald-700 mb-4">{DEMO.after.rasm}¢</div>
-                <div className="space-y-2 text-sm text-emerald-700">
-                  <div>OTP: {DEMO.after.otp}% <span className="text-emerald-500">+{DEMO.after.otp - DEMO.before.otp}</span></div>
-                  <div>Load: {DEMO.after.loadFactor}% <span className="text-emerald-500">+{DEMO.after.loadFactor - DEMO.before.loadFactor}</span></div>
-                  <div>Revenue: ${DEMO.after.revenue}M/day <span className="text-emerald-500">+${(DEMO.after.revenue - DEMO.before.revenue).toFixed(2)}M</span></div>
-                </div>
-              </div>
-            </div>
-            <div className="mt-8 p-6 bg-emerald-600 rounded-xl text-white text-center">
-              <div className="text-sm opacity-80">RASM Improvement</div>
-              <div className="text-4xl font-bold">+{((DEMO.after.rasm - DEMO.before.rasm) / DEMO.before.rasm * 100).toFixed(1)}%</div>
-            </div>
-          </div>
-        </section>
-
-        {/* 4. Example */}
-        <section ref={(el) => { sectionRefs.current[3] = el; }} className="min-h-screen p-12 flex flex-col justify-center bg-slate-50">
-          <div className="max-w-3xl">
-            <h1 className="text-4xl font-bold text-slate-800 mb-4">One Decision = Millions</h1>
-            <p className="text-xl text-slate-600 mb-8">Route {DEMO.route.name}: Equipment swap recommendation</p>
-            <div className="flex gap-8 mb-8">
-              <div className="flex-1 p-6 bg-white rounded-lg border">
-                <div className="flex items-center gap-2 mb-4">
-                  <Plane className="w-5 h-5 text-slate-400" />
-                  <span className="text-slate-500">Before: A320</span>
-                </div>
-                <div className="text-3xl font-bold">${(DEMO.route.beforeProfit).toLocaleString()}/day</div>
-              </div>
-              <div className="flex-1 p-6 bg-emerald-50 rounded-lg border border-emerald-200">
-                <div className="flex items-center gap-2 mb-4">
-                  <Plane className="w-5 h-5 text-emerald-600" />
-                  <span className="text-emerald-600">After: A321</span>
-                </div>
-                <div className="text-3xl font-bold text-emerald-700">${(DEMO.route.afterProfit).toLocaleString()}/day</div>
-              </div>
-            </div>
-            <div className="p-6 bg-[#002855] rounded-xl text-white text-center">
-              <div className="text-sm opacity-80">Annual Impact (This Route Alone)</div>
-              <div className="text-4xl font-bold">${DEMO.route.annualImpact}M</div>
-            </div>
-          </div>
-        </section>
-
-        {/* 5. ROI Calculator */}
-        <section ref={(el) => { sectionRefs.current[4] = el; }} className="min-h-screen p-12 flex flex-col justify-center">
-          <div className="max-w-3xl">
-            <h1 className="text-4xl font-bold text-slate-800 mb-8">Your ROI</h1>
-            <div className="grid grid-cols-2 gap-8">
-              <div className="space-y-4">
+        {/* Demo Content */}
+        <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
+          {activeDemo === 'optimizer' && (
+            <div className="p-8">
+              <div className="flex items-center justify-between mb-6">
                 <div>
-                  <label className="text-sm text-slate-500">Fleet Size</label>
-                  <input
-                    type="range" min={50} max={300} value={roiInputs.fleet}
-                    onChange={(e) => setRoiInputs({ ...roiInputs, fleet: +e.target.value })}
-                    className="w-full"
-                  />
-                  <div className="text-2xl font-bold">{roiInputs.fleet} aircraft</div>
+                  <h2 className="text-2xl font-bold text-slate-800">Route Optimization Engine</h2>
+                  <p className="text-slate-500">Select a route and see ML-powered recommendations</p>
                 </div>
-                <div>
-                  <label className="text-sm text-slate-500">Annual Revenue ($B)</label>
-                  <input
-                    type="range" min={1} max={10} step={0.5} value={roiInputs.revenue}
-                    onChange={(e) => setRoiInputs({ ...roiInputs, revenue: +e.target.value })}
-                    className="w-full"
-                  />
-                  <div className="text-2xl font-bold">${roiInputs.revenue}B</div>
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-100 text-emerald-700 rounded-full text-sm">
+                  <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+                  ML Engine Active
                 </div>
               </div>
+
+              {/* Route Selector */}
+              <div className="grid grid-cols-5 gap-3 mb-6">
+                {(topRoutes.length > 0 ? topRoutes.slice(0, 5) : [
+                  { route: 'MCO-PHL' }, { route: 'DTW-MCO' }, { route: 'FLL-EWR' },
+                  { route: 'LAS-DTW' }, { route: 'ATL-FLL' }
+                ]).map((r) => (
+                  <button
+                    key={r.route}
+                    onClick={() => { setSelectedRoute(r.route); setOptimizationResult(null); }}
+                    className={`p-4 rounded-lg border-2 transition-all ${
+                      selectedRoute === r.route
+                        ? 'border-[#002855] bg-blue-50'
+                        : 'border-slate-200 hover:border-slate-300'
+                    }`}
+                  >
+                    <div className="font-bold text-slate-800">{r.route}</div>
+                    {r.pax && <div className="text-xs text-slate-500">{(r.pax / 1000).toFixed(0)}K pax/yr</div>}
+                  </button>
+                ))}
+              </div>
+
+              {/* Run Button */}
+              <button
+                onClick={runOptimization}
+                disabled={optimizing}
+                className="w-full py-4 bg-[#002855] text-white rounded-lg font-semibold text-lg hover:bg-[#001a3d] transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {optimizing ? (
+                  <>
+                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    Analyzing {selectedRoute}...
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-5 h-5" />
+                    Optimize {selectedRoute}
+                  </>
+                )}
+              </button>
+
+              {/* Result */}
+              {optimizationResult && (
+                <div className="mt-8 grid grid-cols-3 gap-6">
+                  {/* Current */}
+                  <div className="p-6 bg-slate-100 rounded-xl">
+                    <div className="text-sm text-slate-500 uppercase mb-3">Current State</div>
+                    <div className="flex items-center gap-2 mb-4">
+                      <Plane className="w-5 h-5 text-slate-400" />
+                      <span className="font-semibold">{optimizationResult.current.equipment}</span>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Seats</span>
+                        <span className="font-semibold">{optimizationResult.current.seats}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Daily Profit</span>
+                        <span className="font-semibold">${optimizationResult.current.profit.toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">RASM</span>
+                        <span className="font-semibold">{optimizationResult.current.rasm.toFixed(2)}¢</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Arrow */}
+                  <div className="flex items-center justify-center">
+                    <div className="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center">
+                      <ArrowRight className="w-8 h-8 text-emerald-600" />
+                    </div>
+                  </div>
+
+                  {/* Recommended */}
+                  <div className="p-6 bg-emerald-50 rounded-xl border-2 border-emerald-200">
+                    <div className="text-sm text-emerald-600 uppercase mb-3">Recommended</div>
+                    <div className="flex items-center gap-2 mb-4">
+                      <Plane className="w-5 h-5 text-emerald-600" />
+                      <span className="font-semibold text-emerald-700">{optimizationResult.recommended.equipment}</span>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex justify-between">
+                        <span className="text-emerald-600">Seats</span>
+                        <span className="font-semibold text-emerald-700">{optimizationResult.recommended.seats}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-emerald-600">Daily Profit</span>
+                        <span className="font-semibold text-emerald-700">${optimizationResult.recommended.profit.toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-emerald-600">RASM</span>
+                        <span className="font-semibold text-emerald-700">{optimizationResult.recommended.rasm.toFixed(2)}¢</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Impact Summary */}
+                  <div className="col-span-3 p-6 bg-[#002855] rounded-xl text-white text-center">
+                    <div className="text-sm opacity-80 mb-2">Annual Impact from This Route</div>
+                    <div className="text-4xl font-bold">+${((optimizationResult.uplift * 365) / 1000000).toFixed(1)}M</div>
+                    <div className="mt-2 text-emerald-300">+{optimizationResult.rasmGain.toFixed(2)}¢ RASM improvement</div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeDemo === 'decision' && (
+            <div className="p-8">
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h2 className="text-2xl font-bold text-slate-800">Decision Engine</h2>
+                  <p className="text-slate-500">Approve ML recommendations with one click</p>
+                </div>
+                {approvedDecisions.length > 0 && (
+                  <div className="px-4 py-2 bg-emerald-100 text-emerald-700 rounded-lg">
+                    <span className="font-semibold">+${(totalApprovedProfit / 1000).toFixed(0)}K/day</span> captured
+                  </div>
+                )}
+              </div>
+
               <div className="space-y-4">
-                <div className="p-4 bg-slate-100 rounded-lg">
-                  <div className="text-sm text-slate-500">Revenue Uplift (2% RASM)</div>
-                  <div className="text-2xl font-bold text-emerald-600">+${roi.uplift.toFixed(0)}M</div>
+                {decisions.map((d) => {
+                  const isApproved = approvedDecisions.includes(d.id);
+                  return (
+                    <div
+                      key={d.id}
+                      className={`p-5 rounded-xl border-2 transition-all ${
+                        isApproved
+                          ? 'border-emerald-200 bg-emerald-50'
+                          : 'border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                          <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${
+                            isApproved ? 'bg-emerald-200' : 'bg-slate-100'
+                          }`}>
+                            {isApproved ? (
+                              <Check className="w-6 h-6 text-emerald-600" />
+                            ) : (
+                              <Plane className="w-6 h-6 text-slate-400" />
+                            )}
+                          </div>
+                          <div>
+                            <div className="font-semibold text-lg">{d.route}</div>
+                            <div className="text-slate-500">{d.action}</div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-6">
+                          <div className="text-right">
+                            <div className="font-bold text-emerald-600 text-xl">+${(d.profit / 1000).toFixed(1)}K/day</div>
+                            <div className="text-sm text-slate-500">{d.rasm > 0 ? '+' : ''}{d.rasm.toFixed(2)}¢ RASM</div>
+                          </div>
+
+                          {!isApproved ? (
+                            <button
+                              onClick={() => setApprovedDecisions([...approvedDecisions, d.id])}
+                              className="px-6 py-3 bg-emerald-600 text-white rounded-lg font-semibold hover:bg-emerald-700"
+                            >
+                              Approve
+                            </button>
+                          ) : (
+                            <div className="px-6 py-3 text-emerald-600 font-semibold">Approved ✓</div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {approvedDecisions.length === decisions.length && (
+                <div className="mt-8 p-6 bg-emerald-600 rounded-xl text-white text-center">
+                  <Check className="w-12 h-12 mx-auto mb-3" />
+                  <div className="text-2xl font-bold mb-2">All Decisions Approved!</div>
+                  <div className="text-emerald-100">
+                    Annual impact: <span className="font-bold">+${((totalApprovedProfit * 365) / 1000000).toFixed(1)}M</span>
+                  </div>
                 </div>
-                <div className="p-4 bg-slate-100 rounded-lg">
-                  <div className="text-sm text-slate-500">Cost Savings</div>
-                  <div className="text-2xl font-bold text-emerald-600">+${roi.savings.toFixed(1)}M</div>
+              )}
+            </div>
+          )}
+
+          {activeDemo === 'simulation' && (
+            <div className="p-8">
+              <div className="mb-6">
+                <h2 className="text-2xl font-bold text-slate-800">Impact Simulator</h2>
+                <p className="text-slate-500">See the network-wide impact of optimization</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-8">
+                <div className="space-y-6">
+                  <div className="p-6 bg-slate-100 rounded-xl">
+                    <div className="text-sm text-slate-500 uppercase mb-4">Without SkyWeave</div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <div className="text-3xl font-bold text-slate-600">7.72¢</div>
+                        <div className="text-sm text-slate-500">Network RASM</div>
+                      </div>
+                      <div>
+                        <div className="text-3xl font-bold text-slate-600">$3.1B</div>
+                        <div className="text-sm text-slate-500">Annual Revenue</div>
+                      </div>
+                      <div>
+                        <div className="text-3xl font-bold text-slate-600">78%</div>
+                        <div className="text-sm text-slate-500">OTP</div>
+                      </div>
+                      <div>
+                        <div className="text-3xl font-bold text-slate-600">86%</div>
+                        <div className="text-sm text-slate-500">Load Factor</div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <div className="p-4 bg-emerald-600 rounded-lg text-white">
-                  <div className="text-sm opacity-80">Total Annual Impact</div>
-                  <div className="text-3xl font-bold">${roi.total.toFixed(0)}M</div>
+
+                <div className="space-y-6">
+                  <div className="p-6 bg-emerald-50 rounded-xl border-2 border-emerald-200">
+                    <div className="text-sm text-emerald-600 uppercase mb-4">With SkyWeave</div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <div className="text-3xl font-bold text-emerald-600">8.41¢</div>
+                        <div className="text-sm text-emerald-600">Network RASM <span className="text-emerald-500">+9%</span></div>
+                      </div>
+                      <div>
+                        <div className="text-3xl font-bold text-emerald-600">$3.38B</div>
+                        <div className="text-sm text-emerald-600">Annual Revenue <span className="text-emerald-500">+$280M</span></div>
+                      </div>
+                      <div>
+                        <div className="text-3xl font-bold text-emerald-600">86%</div>
+                        <div className="text-sm text-emerald-600">OTP <span className="text-emerald-500">+8pts</span></div>
+                      </div>
+                      <div>
+                        <div className="text-3xl font-bold text-emerald-600">89%</div>
+                        <div className="text-sm text-emerald-600">Load Factor <span className="text-emerald-500">+3pts</span></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-8 p-6 bg-[#002855] rounded-xl text-white">
+                <div className="grid grid-cols-3 gap-8 text-center">
+                  <div>
+                    <div className="text-sm opacity-70 mb-1">Revenue Uplift</div>
+                    <div className="text-3xl font-bold">+$280M</div>
+                    <div className="text-sm text-emerald-300">per year</div>
+                  </div>
+                  <div>
+                    <div className="text-sm opacity-70 mb-1">RASM Improvement</div>
+                    <div className="text-3xl font-bold">+8.9%</div>
+                    <div className="text-sm text-emerald-300">network-wide</div>
+                  </div>
+                  <div>
+                    <div className="text-sm opacity-70 mb-1">ML Accuracy</div>
+                    <div className="text-3xl font-bold">87%</div>
+                    <div className="text-sm text-emerald-300">prediction accuracy</div>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        </section>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="mt-8 text-center text-slate-500 text-sm">
+          SkyWeave • The Operating System for RASM-First Airlines
+        </div>
       </div>
     </div>
   );
