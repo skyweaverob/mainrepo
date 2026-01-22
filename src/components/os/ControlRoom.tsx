@@ -10,6 +10,7 @@ import { DecisionLog } from './DecisionLog';
 import { AlertInterruptDrawer } from './AlertInterruptDrawer';
 import { DataHealthBadge } from './DataHealthBadge';
 import { NetworkMap } from '../NetworkMap';
+import { OutcomeTracking, TrackedOutcome } from './OutcomeTracking';
 import * as api from '@/lib/api';
 import { formatCurrencyDelta } from '@/lib/formatters';
 import type {
@@ -73,6 +74,7 @@ export function ControlRoom({ onHubClick }: ControlRoomProps) {
   const [decisionLog, setDecisionLog] = useState<any[]>([]);
   const [alerts, setAlerts] = useState<OSAlert[]>([]);
   const [dataFeeds, setDataFeeds] = useState<DataHealthStatus[]>([]);
+  const [trackedOutcomes, setTrackedOutcomes] = useState<TrackedOutcome[]>([]);
 
   // NEW: All domain data stores
   const [fleetData, setFleetData] = useState<FleetData>({ summary: null, maintenanceDue: [], alignment: null });
@@ -113,6 +115,8 @@ export function ControlRoom({ onHubClick }: ControlRoomProps) {
           mroSummary,
           scheduledMaint,
           mroImpact,
+          // Outcomes
+          outcomesResult,
         ] = await Promise.all([
           // Optimizer & Intelligence
           api.getOptimizerStatus().catch(() => null),
@@ -135,6 +139,8 @@ export function ControlRoom({ onHubClick }: ControlRoomProps) {
           api.getMROSummary().catch(() => null),
           api.getScheduledMaintenance(30).catch(() => []),
           api.getMROImpact().catch(() => null),
+          // Outcome tracking
+          api.getTrackedOutcomes().catch(() => ({ data: { outcomes: [] } })),
         ]);
 
         // Store all data with timestamps
@@ -171,6 +177,21 @@ export function ControlRoom({ onHubClick }: ControlRoomProps) {
           scheduled: scheduledMaint,
           impact: mroImpact,
         });
+
+        // Set tracked outcomes
+        if (outcomesResult?.data?.outcomes) {
+          const outcomes: TrackedOutcome[] = outcomesResult.data.outcomes.map((o: any) => ({
+            decisionId: o.decision_id,
+            decisionTitle: o.decision_title,
+            executedAt: new Date(o.executed_at),
+            trackingPeriodDays: o.tracking_period_days,
+            predicted: { revenueImpact: o.predicted.revenue_impact, rasmImpact: o.predicted.rasm_impact },
+            actual: { revenueImpact: o.actual.revenue_impact, rasmImpact: o.actual.rasm_impact },
+            variance: { revenue: o.variance.revenue, rasm: o.variance.rasm },
+            status: o.status as TrackedOutcome['status'],
+          }));
+          setTrackedOutcomes(outcomes);
+        }
 
         // Set network data
         setNetworkData({
@@ -1482,11 +1503,12 @@ export function ControlRoom({ onHubClick }: ControlRoomProps) {
           />
         </div>
 
-        {/* Right: Decision Log */}
-        <div className="w-80 flex-shrink-0 overflow-auto">
+        {/* Right: Decision Log + Outcomes */}
+        <div className="w-80 flex-shrink-0 overflow-auto flex flex-col gap-4">
+          <OutcomeTracking outcomes={trackedOutcomes} compact />
           <DecisionLog
             entries={decisionLog}
-            maxVisible={8}
+            maxVisible={6}
             showFilters={false}
           />
         </div>

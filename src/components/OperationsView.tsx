@@ -315,20 +315,38 @@ function MROContent() {
 // Station Readiness Content
 // ========================================
 function StationReadinessContent() {
-  const stations = [
-    { code: 'ATL', crewReady: 94, gatesAvail: 88, groundSupport: 92, overall: 91 },
-    { code: 'MCO', crewReady: 97, gatesAvail: 95, groundSupport: 96, overall: 96 },
-    { code: 'FLL', crewReady: 89, gatesAvail: 85, groundSupport: 88, overall: 87 },
-    { code: 'DTW', crewReady: 92, gatesAvail: 90, groundSupport: 94, overall: 92 },
-    { code: 'LAS', crewReady: 96, gatesAvail: 91, groundSupport: 93, overall: 93 },
-    { code: 'DEN', crewReady: 88, gatesAvail: 82, groundSupport: 85, overall: 85 },
-    { code: 'EWR', crewReady: 85, gatesAvail: 78, groundSupport: 81, overall: 81 },
-  ].sort((a, b) => b.overall - a.overall);
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
 
-  const getColor = (v: number) => v >= 90 ? 'text-emerald-600' : v >= 80 ? 'text-amber-600' : 'text-red-600';
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        const result = await api.getStationReadiness();
+        setData(result.data);
+      } catch (error) {
+        console.error('Failed to fetch station readiness:', error);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchData();
+  }, []);
+
+  if (loading) return <LoadingState />;
+  if (!data) return <EmptyState message="No station data" />;
+
+  const getColor = (v: number) => v >= 85 ? 'text-emerald-600' : v >= 70 ? 'text-amber-600' : 'text-red-600';
 
   return (
     <div className="space-y-4">
+      {/* Summary */}
+      <div className="flex gap-6 text-sm">
+        <div><span className="text-slate-500">Avg:</span> <span className="font-semibold">{data.summary.avg_readiness}%</span></div>
+        <div><span className="text-emerald-600">{data.summary.stations_green} green</span></div>
+        <div><span className="text-amber-600">{data.summary.stations_yellow} yellow</span></div>
+        <div><span className="text-red-600">{data.summary.stations_red} red</span></div>
+      </div>
+
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b text-left text-xs text-slate-500 uppercase">
@@ -336,17 +354,19 @@ function StationReadinessContent() {
             <th className="text-right">Crew</th>
             <th className="text-right">Gates</th>
             <th className="text-right">Ground</th>
+            <th className="text-right">Weather</th>
             <th className="text-right">Overall</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
-          {stations.map((s) => (
-            <tr key={s.code}>
-              <td className="py-2 font-semibold">{s.code}</td>
-              <td className={`text-right ${getColor(s.crewReady)}`}>{s.crewReady}%</td>
-              <td className={`text-right ${getColor(s.gatesAvail)}`}>{s.gatesAvail}%</td>
-              <td className={`text-right ${getColor(s.groundSupport)}`}>{s.groundSupport}%</td>
-              <td className={`text-right font-semibold ${getColor(s.overall)}`}>{s.overall}%</td>
+          {data.stations.slice(0, 12).map((s: any) => (
+            <tr key={s.station}>
+              <td className="py-2 font-semibold">{s.station}</td>
+              <td className={`text-right ${getColor(s.crew_readiness)}`}>{s.crew_readiness}%</td>
+              <td className={`text-right ${getColor(s.gate_availability)}`}>{s.gate_availability}%</td>
+              <td className={`text-right ${getColor(s.ground_ops)}`}>{s.ground_ops}%</td>
+              <td className={`text-right ${getColor(s.weather_impact)}`}>{s.weather_impact}%</td>
+              <td className={`text-right font-semibold ${getColor(s.overall_score)}`}>{s.overall_score}%</td>
             </tr>
           ))}
         </tbody>
@@ -359,66 +379,73 @@ function StationReadinessContent() {
 // Recovery Cockpit Content
 // ========================================
 function RecoveryCockpitContent() {
-  const disruption = { type: 'Weather - ATL', progress: 68 };
-  const actions = [
-    { action: 'Pre-cancel NK891', status: 'done', time: '14:35' },
-    { action: 'Reposition N234NK from MCO', status: 'done', time: '14:42' },
-    { action: 'Call 3 reserve crews', status: 'active', time: '15:10' },
-    { action: 'Rebook 340 PAX via DFW', status: 'active', time: '15:25' },
-    { action: 'Swap equipment NK567', status: 'pending', time: '16:00' },
-  ];
-  const flights = [
-    { flight: 'NK234', route: 'ATL-MCO', status: 'Delayed 2h', pax: 182 },
-    { flight: 'NK567', route: 'ATL-FLL', status: 'Delayed 90m', pax: 175 },
-    { flight: 'NK891', route: 'ATL-DEN', status: 'Cancelled', pax: 156 },
-  ];
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        const result = await api.getActiveDisruptions();
+        setData(result.data);
+      } catch (error) {
+        console.error('Failed to fetch disruptions:', error);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchData();
+  }, []);
+
+  if (loading) return <LoadingState />;
+  if (!data || data.disruptions.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center h-32 text-slate-400">
+        <Shield className="w-8 h-8 mb-2 text-emerald-500" />
+        <span>No active disruptions</span>
+      </div>
+    );
+  }
+
+  const getSeverityColor = (s: string) => s === 'high' ? 'border-red-200 bg-red-50' : s === 'medium' ? 'border-amber-200 bg-amber-50' : 'border-slate-200 bg-slate-50';
+  const getSeverityIcon = (s: string) => s === 'high' ? 'text-red-600' : s === 'medium' ? 'text-amber-600' : 'text-slate-500';
 
   return (
     <div className="space-y-4">
-      {/* Status bar */}
-      <div className="flex items-center gap-4 p-3 bg-amber-50 border border-amber-200 rounded">
-        <AlertTriangle className="w-5 h-5 text-amber-600" />
-        <div className="flex-1">
-          <span className="font-medium">{disruption.type}</span>
-          <div className="w-32 h-1.5 bg-amber-200 rounded mt-1">
-            <div className="h-full bg-emerald-500 rounded" style={{ width: `${disruption.progress}%` }} />
+      {/* Summary */}
+      <div className="flex gap-6 text-sm">
+        <div><span className="text-slate-500">Active:</span> <span className="font-semibold text-amber-600">{data.summary.active_count}</span></div>
+        <div><span className="text-slate-500">Flights:</span> <span className="font-semibold">{data.summary.total_flights_affected}</span></div>
+        <div><span className="text-slate-500">PAX:</span> <span className="font-semibold">{data.summary.total_pax_affected.toLocaleString()}</span></div>
+        <div><span className="text-slate-500">Revenue:</span> <span className="font-semibold text-red-600">${Math.abs(data.summary.total_revenue_impact / 1000).toFixed(0)}K</span></div>
+      </div>
+
+      {/* Disruption cards */}
+      {data.disruptions.map((d: any) => (
+        <div key={d.id} className={`border rounded p-3 ${getSeverityColor(d.severity)}`}>
+          <div className="flex items-center gap-2 mb-2">
+            <AlertTriangle className={`w-4 h-4 ${getSeverityIcon(d.severity)}`} />
+            <span className="font-medium">{d.type} - {d.station}</span>
+            <span className="ml-auto text-xs text-slate-500">{d.id}</span>
           </div>
-        </div>
-        <span className="text-sm text-amber-700">{disruption.progress}% recovered</span>
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
-        {/* Actions */}
-        <div className="border border-slate-200 rounded p-3">
-          <div className="text-xs text-slate-500 uppercase mb-2">Recovery Actions</div>
-          {actions.map((a, i) => (
-            <div key={i} className="flex items-center gap-2 py-1 text-sm">
-              <div className={`w-2 h-2 rounded-full ${a.status === 'done' ? 'bg-emerald-500' : a.status === 'active' ? 'bg-blue-500' : 'bg-slate-300'}`} />
-              <span className={a.status === 'done' ? 'text-slate-400' : ''}>{a.action}</span>
-              <span className="ml-auto text-xs text-slate-400">{a.time}</span>
+          <p className="text-sm text-slate-600 mb-2">{d.description}</p>
+          <div className="flex gap-4 text-xs text-slate-500">
+            <span>{d.flights_affected} flights</span>
+            <span>{d.pax_affected.toLocaleString()} PAX</span>
+            <span className="text-red-600">${Math.abs(d.revenue_impact / 1000).toFixed(0)}K impact</span>
+          </div>
+          {d.recovery_actions.length > 0 && (
+            <div className="mt-2 pt-2 border-t border-slate-200">
+              <div className="text-xs text-slate-500 mb-1">Actions:</div>
+              {d.recovery_actions.slice(0, 3).map((a: string, i: number) => (
+                <div key={i} className="text-xs flex items-center gap-1">
+                  <div className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                  {a}
+                </div>
+              ))}
             </div>
-          ))}
+          )}
         </div>
-
-        {/* Affected flights */}
-        <div className="border border-slate-200 rounded p-3">
-          <div className="text-xs text-slate-500 uppercase mb-2">Affected Flights</div>
-          {flights.map((f) => (
-            <div key={f.flight} className="flex items-center justify-between py-1 text-sm">
-              <span className="font-mono">{f.flight} <span className="text-slate-400">{f.route}</span></span>
-              <span className={f.status.includes('Cancel') ? 'text-red-600' : 'text-amber-600'}>{f.status}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Summary stats */}
-      <div className="flex gap-6 text-sm pt-2 border-t">
-        <div><span className="text-slate-500">Flights:</span> <span className="font-semibold">12</span></div>
-        <div><span className="text-slate-500">PAX:</span> <span className="font-semibold">1,840</span></div>
-        <div><span className="text-slate-500">Revenue Loss:</span> <span className="font-semibold text-red-600">$340K</span></div>
-        <div><span className="text-slate-500">ETA:</span> <span className="font-semibold">18:15</span></div>
-      </div>
+      ))}
     </div>
   );
 }
@@ -427,21 +454,14 @@ function RecoveryCockpitContent() {
 // Tail Health Content
 // ========================================
 function TailHealthContent() {
-  const [aircraft, setAircraft] = useState<any[]>([]);
+  const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function fetchData() {
       try {
-        const aircraftData = await api.getFleetList({ limit: 100 });
-        const enrichedData = aircraftData.map((ac: any) => ({
-          ...ac,
-          rasm: 7.5 + Math.random() * 4,
-          profitScore: 60 + Math.random() * 35,
-          utilization: 8 + Math.random() * 6,
-        }));
-        enrichedData.sort((a: any, b: any) => b.profitScore - a.profitScore);
-        setAircraft(enrichedData);
+        const result = await api.getTailHealth();
+        setData(result.data);
       } catch (error) {
         console.error('Failed to fetch tail health data:', error);
       } finally {
@@ -452,29 +472,30 @@ function TailHealthContent() {
   }, []);
 
   if (loading) return <LoadingState />;
-  if (aircraft.length === 0) return <EmptyState message="No data" />;
+  if (!data || data.tails.length === 0) return <EmptyState message="No data" />;
 
-  const avgRasm = aircraft.reduce((sum, ac) => sum + ac.rasm, 0) / aircraft.length;
-  const getColor = (v: number) => v >= 85 ? 'text-emerald-600' : v >= 70 ? 'text-amber-600' : 'text-red-600';
-  const getRasmBg = (r: number) => r >= 10 ? 'bg-emerald-500' : r >= 9 ? 'bg-emerald-400' : r >= 8 ? 'bg-amber-400' : 'bg-red-500';
+  const getRasmBg = (r: number) => r >= 9 ? 'bg-emerald-500' : r >= 8.5 ? 'bg-emerald-400' : r >= 8 ? 'bg-amber-400' : 'bg-red-500';
+  const getTrendIcon = (t: string) => t === 'up' ? '↑' : t === 'down' ? '↓' : '→';
+  const getTrendColor = (t: string) => t === 'up' ? 'text-emerald-600' : t === 'down' ? 'text-red-600' : 'text-slate-400';
 
   return (
     <div className="space-y-4">
       {/* Quick stats */}
       <div className="flex gap-6 text-sm">
-        <div><span className="text-slate-500">Avg RASM:</span> <span className="font-semibold">{avgRasm.toFixed(2)}¢</span></div>
-        <div><span className="text-slate-500">Top Performers:</span> <span className="font-semibold text-emerald-600">{aircraft.filter(a => a.profitScore >= 85).length}</span></div>
+        <div><span className="text-slate-500">Avg RASM:</span> <span className="font-semibold">{data.summary.avg_rasm}¢</span></div>
+        <div><span className="text-slate-500">Avg Util:</span> <span className="font-semibold">{data.summary.avg_utilization}h</span></div>
+        <div><span className="text-slate-500">Daily Profit:</span> <span className="font-semibold text-emerald-600">${(data.summary.total_daily_profit / 1000).toFixed(0)}K</span></div>
       </div>
 
       {/* Heatmap */}
       <div className="flex flex-wrap gap-1">
-        {aircraft.slice(0, 40).map((ac) => (
+        {data.tails.slice(0, 30).map((t: any) => (
           <div
-            key={ac.aircraft_registration}
-            className={`w-10 h-6 rounded flex items-center justify-center text-white text-xs font-mono ${getRasmBg(ac.rasm)}`}
-            title={`${ac.aircraft_registration}: ${ac.rasm.toFixed(1)}¢`}
+            key={t.tail}
+            className={`w-10 h-6 rounded flex items-center justify-center text-white text-xs font-mono ${getRasmBg(t.rasm_cents)}`}
+            title={`${t.tail}: ${t.rasm_cents}¢`}
           >
-            {ac.aircraft_registration?.slice(-3)}
+            {t.tail?.slice(-3)}
           </div>
         ))}
       </div>
@@ -485,19 +506,23 @@ function TailHealthContent() {
           <tr className="border-b text-left text-xs text-slate-500 uppercase">
             <th className="py-2">Tail</th>
             <th>Type</th>
+            <th>Base</th>
             <th className="text-right">RASM</th>
-            <th className="text-right">Profit</th>
             <th className="text-right">Util</th>
+            <th className="text-right">$/day</th>
+            <th className="text-center">Trend</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
-          {aircraft.slice(0, 15).map((ac) => (
-            <tr key={ac.aircraft_registration}>
-              <td className="py-2 font-mono">{ac.aircraft_registration}</td>
-              <td>{ac.aircraft_type}</td>
-              <td className="text-right">{ac.rasm.toFixed(2)}¢</td>
-              <td className={`text-right font-semibold ${getColor(ac.profitScore)}`}>{ac.profitScore.toFixed(0)}%</td>
-              <td className="text-right">{ac.utilization.toFixed(1)}h</td>
+          {data.tails.slice(0, 15).map((t: any) => (
+            <tr key={t.tail}>
+              <td className="py-2 font-mono">{t.tail}</td>
+              <td>{t.aircraft_type}</td>
+              <td>{t.base}</td>
+              <td className="text-right">{t.rasm_cents}¢</td>
+              <td className="text-right">{t.utilization_hours}h</td>
+              <td className="text-right font-semibold">${(t.daily_profit / 1000).toFixed(1)}K</td>
+              <td className={`text-center ${getTrendColor(t.trend)}`}>{getTrendIcon(t.trend)}</td>
             </tr>
           ))}
         </tbody>

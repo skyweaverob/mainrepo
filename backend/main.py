@@ -2835,6 +2835,247 @@ async def validate_metric_value(metric_id: str = Query(...), value: float = Quer
     })
 
 
+# =============================================================================
+# TAIL HEALTH API
+# =============================================================================
+
+@app.get("/api/tail-health")
+async def get_tail_health():
+    """Get RASM and profitability metrics per aircraft tail"""
+
+    # Generate realistic tail health data based on fleet
+    tails = []
+
+    if fleet_df is not None and not fleet_df.empty:
+        for _, row in fleet_df.head(20).iterrows():
+            reg = row.get('aircraft_registration', f'N{random.randint(100, 999)}NK')
+            ac_type = row.get('aircraft_type', 'A320neo')
+            base = row.get('home_base', 'ATL')
+
+            # Generate realistic metrics
+            base_rasm = 8.2 + random.uniform(-0.8, 1.2)
+            utilization = 10.5 + random.uniform(-2, 2)
+            daily_profit = 15000 + random.uniform(-8000, 12000)
+
+            tails.append({
+                "tail": reg,
+                "aircraft_type": ac_type,
+                "base": base,
+                "rasm_cents": round(base_rasm, 2),
+                "utilization_hours": round(utilization, 1),
+                "daily_profit": round(daily_profit, 0),
+                "status": random.choice(["flying", "flying", "flying", "ground", "mx"]),
+                "trend": random.choice(["up", "flat", "down"]),
+            })
+    else:
+        # Demo data when fleet not loaded
+        for i in range(15):
+            reg = f"N{900 + i}NK"
+            tails.append({
+                "tail": reg,
+                "aircraft_type": random.choice(["A320neo", "A321neo", "A319"]),
+                "base": random.choice(["ATL", "MCO", "FLL", "DTW", "LAS"]),
+                "rasm_cents": round(8.2 + random.uniform(-0.8, 1.2), 2),
+                "utilization_hours": round(10.5 + random.uniform(-2, 2), 1),
+                "daily_profit": round(15000 + random.uniform(-8000, 12000), 0),
+                "status": random.choice(["flying", "flying", "flying", "ground", "mx"]),
+                "trend": random.choice(["up", "flat", "down"]),
+            })
+
+    # Sort by RASM descending
+    tails.sort(key=lambda x: x["rasm_cents"], reverse=True)
+
+    return sanitize_for_json({
+        "success": True,
+        "data": {
+            "tails": tails,
+            "summary": {
+                "avg_rasm": round(sum(t["rasm_cents"] for t in tails) / len(tails), 2) if tails else 0,
+                "avg_utilization": round(sum(t["utilization_hours"] for t in tails) / len(tails), 1) if tails else 0,
+                "total_daily_profit": round(sum(t["daily_profit"] for t in tails), 0) if tails else 0,
+            }
+        }
+    })
+
+
+# =============================================================================
+# STATION READINESS API
+# =============================================================================
+
+@app.get("/api/stations/readiness")
+async def get_station_readiness():
+    """Get operational readiness scores for each station"""
+
+    stations = []
+    station_codes = ["ATL", "MCO", "FLL", "DTW", "LAS", "DEN", "DFW", "ORD", "EWR", "LAX", "MSP", "BOS", "SEA", "PHX", "SFO"]
+
+    for code in station_codes:
+        # Generate realistic readiness scores
+        crew_score = 85 + random.randint(-15, 15)
+        gate_score = 80 + random.randint(-20, 20)
+        ground_score = 88 + random.randint(-18, 12)
+        wx_score = 70 + random.randint(-10, 30)
+
+        overall = round((crew_score + gate_score + ground_score + wx_score) / 4)
+
+        stations.append({
+            "station": code,
+            "overall_score": overall,
+            "crew_readiness": crew_score,
+            "gate_availability": gate_score,
+            "ground_ops": ground_score,
+            "weather_impact": wx_score,
+            "status": "green" if overall >= 85 else "yellow" if overall >= 70 else "red",
+            "active_flights": random.randint(5, 25),
+            "issues": [] if overall >= 85 else ["Crew shortage" if crew_score < 75 else "Gate congestion" if gate_score < 75 else "Weather delay"],
+        })
+
+    # Sort by overall score descending
+    stations.sort(key=lambda x: x["overall_score"], reverse=True)
+
+    return sanitize_for_json({
+        "success": True,
+        "data": {
+            "stations": stations,
+            "summary": {
+                "avg_readiness": round(sum(s["overall_score"] for s in stations) / len(stations)),
+                "stations_green": len([s for s in stations if s["status"] == "green"]),
+                "stations_yellow": len([s for s in stations if s["status"] == "yellow"]),
+                "stations_red": len([s for s in stations if s["status"] == "red"]),
+            }
+        }
+    })
+
+
+# =============================================================================
+# ACTIVE DISRUPTIONS API (Recovery Cockpit)
+# =============================================================================
+
+@app.get("/api/disruptions/active")
+async def get_active_disruptions():
+    """Get currently active disruptions for the recovery cockpit"""
+
+    disruptions = []
+
+    # Generate a few active disruptions
+    disruption_types = [
+        {"type": "Weather", "desc": "Thunderstorms impacting departures", "stations": ["ATL", "MCO", "DFW"]},
+        {"type": "ATC", "desc": "Ground delay program in effect", "stations": ["EWR", "LGA", "JFK"]},
+        {"type": "Mechanical", "desc": "Aircraft AOG - awaiting parts", "stations": ["DTW", "ORD"]},
+        {"type": "Crew", "desc": "Crew timeout - duty hour limits", "stations": ["LAS", "DEN"]},
+    ]
+
+    # Randomly select 1-3 active disruptions
+    num_disruptions = random.randint(1, 3)
+    selected = random.sample(disruption_types, num_disruptions)
+
+    for i, d in enumerate(selected):
+        station = random.choice(d["stations"])
+        flights_affected = random.randint(3, 15)
+        pax_affected = flights_affected * random.randint(120, 180)
+
+        disruptions.append({
+            "id": f"DIS-{datetime.utcnow().strftime('%Y%m%d')}-{i+1:03d}",
+            "type": d["type"],
+            "description": d["desc"],
+            "station": station,
+            "severity": random.choice(["high", "medium", "medium", "low"]),
+            "started_at": (datetime.utcnow() - timedelta(hours=random.randint(1, 4))).isoformat(),
+            "flights_affected": flights_affected,
+            "pax_affected": pax_affected,
+            "estimated_resolution": (datetime.utcnow() + timedelta(hours=random.randint(1, 6))).isoformat(),
+            "recovery_actions": [
+                "Notified affected passengers",
+                "Rebooking in progress",
+                "Monitoring situation",
+            ],
+            "revenue_impact": round(-1 * flights_affected * random.randint(8000, 15000)),
+        })
+
+    return sanitize_for_json({
+        "success": True,
+        "data": {
+            "disruptions": disruptions,
+            "summary": {
+                "active_count": len(disruptions),
+                "total_flights_affected": sum(d["flights_affected"] for d in disruptions),
+                "total_pax_affected": sum(d["pax_affected"] for d in disruptions),
+                "total_revenue_impact": sum(d["revenue_impact"] for d in disruptions),
+            }
+        }
+    })
+
+
+# =============================================================================
+# OUTCOME TRACKING API
+# =============================================================================
+
+@app.get("/api/outcomes")
+async def get_tracked_outcomes():
+    """Get outcome tracking data for completed decisions"""
+
+    outcomes = []
+
+    # Generate sample tracked outcomes
+    decision_titles = [
+        ("MCO-PHL Equipment Swap", "equipment"),
+        ("ATL-FLL Frequency Increase", "capacity"),
+        ("DTW Crew Repositioning", "crew"),
+        ("LAS-DEN Fare Optimization", "pricing"),
+        ("MCO Hub Gate Reallocation", "operations"),
+    ]
+
+    for i, (title, category) in enumerate(decision_titles):
+        predicted_rev = random.randint(8000, 25000)
+        # Actual usually within 20% of predicted
+        variance_pct = random.uniform(-15, 25)
+        actual_rev = round(predicted_rev * (1 + variance_pct / 100))
+
+        predicted_rasm = round(random.uniform(0.05, 0.15), 2)
+        actual_rasm = round(predicted_rasm * (1 + random.uniform(-0.2, 0.3)), 2)
+
+        status = "outperformed" if variance_pct > 10 else "validated" if variance_pct > -5 else "underperformed" if variance_pct > -15 else "tracking"
+
+        outcomes.append({
+            "decision_id": f"DEC-{2024001 + i}",
+            "decision_title": title,
+            "category": category,
+            "executed_at": (datetime.utcnow() - timedelta(days=random.randint(7, 30))).isoformat(),
+            "tracking_period_days": random.randint(7, 21),
+            "predicted": {
+                "revenue_impact": predicted_rev,
+                "rasm_impact": predicted_rasm,
+            },
+            "actual": {
+                "revenue_impact": actual_rev,
+                "rasm_impact": actual_rasm,
+            },
+            "variance": {
+                "revenue": round(variance_pct, 1),
+                "rasm": round((actual_rasm - predicted_rasm) / predicted_rasm * 100 if predicted_rasm else 0, 1),
+            },
+            "status": status,
+        })
+
+    # Calculate ML accuracy
+    validated_count = len([o for o in outcomes if o["status"] in ["validated", "outperformed"]])
+    accuracy = round(validated_count / len(outcomes) * 100) if outcomes else 0
+
+    return sanitize_for_json({
+        "success": True,
+        "data": {
+            "outcomes": outcomes,
+            "summary": {
+                "total_tracked": len(outcomes),
+                "validated": len([o for o in outcomes if o["status"] == "validated"]),
+                "outperformed": len([o for o in outcomes if o["status"] == "outperformed"]),
+                "underperformed": len([o for o in outcomes if o["status"] == "underperformed"]),
+                "ml_accuracy": accuracy,
+            }
+        }
+    })
+
+
 # Run with: uvicorn main:app --reload --port 8000
 if __name__ == "__main__":
     import uvicorn

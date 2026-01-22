@@ -1282,3 +1282,128 @@ export async function validateMetricValue(
 }> {
   return fetchAPI(`/api/metrics/validate?metric_id=${metricId}&value=${value}`, { method: 'POST' });
 }
+
+// =============================================================================
+// TAIL HEALTH API
+// =============================================================================
+
+export interface TailHealth {
+  tail: string;
+  aircraft_type: string;
+  base: string;
+  rasm_cents: number;
+  utilization_hours: number;
+  daily_profit: number;
+  status: string;
+  trend: string;
+}
+
+export async function getTailHealth(): Promise<{
+  success: boolean;
+  data: {
+    tails: TailHealth[];
+    summary: {
+      avg_rasm: number;
+      avg_utilization: number;
+      total_daily_profit: number;
+    };
+  };
+}> {
+  return fetchAPI('/api/tail-health');
+}
+
+// =============================================================================
+// STATION READINESS API
+// =============================================================================
+
+export interface StationReadiness {
+  station: string;
+  overall_score: number;
+  crew_readiness: number;
+  gate_availability: number;
+  ground_ops: number;
+  weather_impact: number;
+  status: string;
+  active_flights: number;
+  issues: string[];
+}
+
+export async function getStationReadiness(): Promise<{
+  success: boolean;
+  data: {
+    stations: StationReadiness[];
+    summary: {
+      avg_readiness: number;
+      stations_green: number;
+      stations_yellow: number;
+      stations_red: number;
+    };
+  };
+}> {
+  return fetchAPI('/api/stations/readiness');
+}
+
+// =============================================================================
+// ACTIVE DISRUPTIONS API (Recovery Cockpit)
+// =============================================================================
+
+export interface ActiveDisruption {
+  id: string;
+  type: string;
+  description: string;
+  station: string;
+  severity: string;
+  started_at: string;
+  flights_affected: number;
+  pax_affected: number;
+  estimated_resolution: string;
+  recovery_actions: string[];
+  revenue_impact: number;
+}
+
+export async function getActiveDisruptions(): Promise<{
+  success: boolean;
+  data: {
+    disruptions: ActiveDisruption[];
+    summary: {
+      active_count: number;
+      total_flights_affected: number;
+      total_pax_affected: number;
+      total_revenue_impact: number;
+    };
+  };
+}> {
+  return fetchAPI('/api/disruptions/active');
+}
+
+// =============================================================================
+// OUTCOME TRACKING API
+// =============================================================================
+
+export interface TrackedOutcomeAPI {
+  decision_id: string;
+  decision_title: string;
+  category: string;
+  executed_at: string;
+  tracking_period_days: number;
+  predicted: { revenue_impact: number; rasm_impact: number };
+  actual: { revenue_impact: number; rasm_impact: number };
+  variance: { revenue: number; rasm: number };
+  status: string;
+}
+
+export async function getTrackedOutcomes(): Promise<{
+  success: boolean;
+  data: {
+    outcomes: TrackedOutcomeAPI[];
+    summary: {
+      total_tracked: number;
+      validated: number;
+      outperformed: number;
+      underperformed: number;
+      ml_accuracy: number;
+    };
+  };
+}> {
+  return fetchAPI('/api/outcomes');
+}
