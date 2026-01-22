@@ -36,9 +36,9 @@ interface AppState {
   error: string | null;
   setError: (error: string | null) => void;
 
-  // Active view - simplified to 4 main tabs + legacy support
-  activeView: 'network' | 'tradeoffs' | 'operations' | 'analytics' | 'route' | 'fleet' | 'crew' | 'mro' | 'scenarios' | 'intelligence' | 'booking' | 'crossdomain';
-  setActiveView: (view: 'network' | 'tradeoffs' | 'operations' | 'analytics' | 'route' | 'fleet' | 'crew' | 'mro' | 'scenarios' | 'intelligence' | 'booking' | 'crossdomain') => void;
+  // Active view - simplified to 4 main tabs + legacy support + OS Control Room
+  activeView: 'network' | 'controlroom' | 'tradeoffs' | 'operations' | 'analytics' | 'route' | 'fleet' | 'crew' | 'mro' | 'scenarios' | 'intelligence' | 'booking' | 'crossdomain';
+  setActiveView: (view: 'network' | 'controlroom' | 'tradeoffs' | 'operations' | 'analytics' | 'route' | 'fleet' | 'crew' | 'mro' | 'scenarios' | 'intelligence' | 'booking' | 'crossdomain') => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -76,7 +76,7 @@ export const useAppStore = create<AppState>((set) => ({
   error: null,
   setError: (error) => set({ error }),
 
-  // Active view - default to Tradeoffs (the EXECUTE demo) for VC demo
-  activeView: 'tradeoffs',
+  // Active view - default to Control Room (the OS decision interface)
+  activeView: 'controlroom',
   setActiveView: (view) => set({ activeView: view }),
 }));

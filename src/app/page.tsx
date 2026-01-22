@@ -15,6 +15,7 @@ import { ConnectionStatus } from '@/components/ConnectionStatus';
 import { HubDetailView } from '@/components/HubDetailView';
 import { OptimizationDemo } from '@/components/OptimizationDemo';
 import { CrossDomainInsights } from '@/components/CrossDomainInsights';
+import { ControlRoom } from '@/components/os/ControlRoom';
 import { useAppStore } from '@/lib/store';
 import { useLiveDataStore } from '@/lib/liveDataStore';
 import { useLiveData } from '@/hooks/useLiveData';
@@ -94,6 +95,10 @@ export default function Home() {
     }
 
     switch (activeView) {
+      // OS-style Control Room - Primary Decision Interface
+      case 'controlroom':
+        return <ControlRoom onHubClick={handleHubClick} />;
+
       // Main 4 tabs
       case 'network':
         return <NetworkView onHubClick={handleHubClick} />;

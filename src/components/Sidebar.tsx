@@ -8,6 +8,7 @@ import {
   Database,
   Shield,
   ChevronRight,
+  Target,
 } from 'lucide-react';
 import { useAppStore } from '@/lib/store';
 import { useLiveDataStore } from '@/lib/liveDataStore';
@@ -16,6 +17,7 @@ import { useLiveDataStore } from '@/lib/liveDataStore';
  * SkyWeave Sidebar - McKinsey-style clean navigation
  */
 const navigation = [
+  { id: 'controlroom', name: 'Control Room', icon: Target, desc: 'Decision OS' },
   { id: 'network', name: 'Network', icon: Network, desc: 'Routes & Markets' },
   { id: 'tradeoffs', name: 'Optimize', icon: Cpu, desc: 'RASM Solver' },
   { id: 'operations', name: 'Operations', icon: Settings2, desc: 'Fleet • Crew • MRO' },
@@ -57,6 +59,7 @@ export function Sidebar({ dataStatus }: SidebarProps) {
   const getStatusColor = (id: string) => {
     if (!dataStatus) return 'bg-slate-300';
     const statusMap: Record<string, boolean> = {
+      controlroom: dataStatus.network_loaded,
       network: dataStatus.network_loaded,
       tradeoffs: dataStatus.network_loaded,
       operations: dataStatus.fleet_loaded && dataStatus.crew_loaded && dataStatus.mro_loaded,
