@@ -894,3 +894,391 @@ export async function simulateEquipmentSwap(
     `/api/optimizer/scenario/equipment-swap?origin=${origin}&destination=${destination}&from_equipment=${from_equipment}&to_equipment=${to_equipment}&frequency_change=${frequency_change}`
   );
 }
+
+// =============================================================================
+// DECISION OS API
+// Per spec Section 10: Execution Layer
+// =============================================================================
+
+export interface Decision {
+  id: string;
+  category: string;
+  title: string;
+  description: string;
+  route?: string;
+  origin?: string;
+  destination?: string;
+  current_state: string;
+  proposed_state: string;
+  priority: 'critical' | 'high' | 'medium' | 'low';
+  status: string;
+  impact: {
+    profit_per_day?: number;
+    rasm_delta_cents?: number;
+    asm_delta?: number;
+    revenue_per_day?: number;
+    cost_per_day?: number;
+    load_factor_delta?: number;
+    spill_reduction?: number;
+  };
+  constraints: Array<{
+    domain: string;
+    severity: string;
+    binding: boolean;
+    description: string;
+  }>;
+  evidence: Record<string, unknown>;
+  confidence: 'high' | 'medium' | 'low';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DecisionListResponse {
+  success: boolean;
+  data: Decision[];
+  pagination: {
+    total: number;
+    limit: number;
+    offset: number;
+    has_more: boolean;
+  };
+}
+
+export async function listDecisions(filters?: {
+  status?: string;
+  category?: string;
+  priority?: string;
+  horizon?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<DecisionListResponse> {
+  const params = new URLSearchParams();
+  if (filters?.status) params.append('status', filters.status);
+  if (filters?.category) params.append('category', filters.category);
+  if (filters?.priority) params.append('priority', filters.priority);
+  if (filters?.horizon) params.append('horizon', filters.horizon);
+  if (filters?.limit) params.append('limit', String(filters.limit));
+  if (filters?.offset) params.append('offset', String(filters.offset));
+
+  const query = params.toString();
+  return fetchAPI<DecisionListResponse>(`/api/decisions${query ? `?${query}` : ''}`);
+}
+
+export async function createDecision(decision: {
+  category: string;
+  title: string;
+  description: string;
+  route?: string;
+  origin?: string;
+  destination?: string;
+  current_state: string;
+  proposed_state: string;
+  priority?: string;
+  impact?: Record<string, unknown>;
+  constraints?: Array<Record<string, unknown>>;
+  evidence?: Record<string, unknown>;
+}): Promise<{ success: boolean; data: Decision }> {
+  return fetchAPI('/api/decisions', {
+    method: 'POST',
+    body: JSON.stringify(decision),
+  });
+}
+
+export async function getDecision(decisionId: string): Promise<{ success: boolean; data: Decision }> {
+  return fetchAPI(`/api/decisions/${decisionId}`);
+}
+
+export async function updateDecision(
+  decisionId: string,
+  update: { status?: string; approver?: string; notes?: string }
+): Promise<{ success: boolean; data: Decision }> {
+  return fetchAPI(`/api/decisions/${decisionId}`, {
+    method: 'PUT',
+    body: JSON.stringify(update),
+  });
+}
+
+export async function simulateDecision(decisionId: string): Promise<{
+  success: boolean;
+  data: {
+    decision: Decision;
+    simulation: {
+      feasibility: string;
+      kpi_deltas: Record<string, { baseline: number; simulated: number; delta: number; delta_percent: number }>;
+      constraint_status: Array<{ constraint: string; status: string; margin: number }>;
+      risks: Array<{ type: string; description: string; probability: number }>;
+      confidence_score: number;
+    };
+  };
+}> {
+  return fetchAPI(`/api/decisions/${decisionId}/simulate`, { method: 'POST' });
+}
+
+export async function approveDecision(
+  decisionId: string,
+  approval: {
+    approved: boolean;
+    approver_id: string;
+    approver_name: string;
+    comments?: string;
+  }
+): Promise<{ success: boolean; data: Decision }> {
+  return fetchAPI(`/api/decisions/${decisionId}/approve`, {
+    method: 'POST',
+    body: JSON.stringify(approval),
+  });
+}
+
+export async function executeDecision(decisionId: string): Promise<{ success: boolean; data: Decision }> {
+  return fetchAPI(`/api/decisions/${decisionId}/execute`, { method: 'POST' });
+}
+
+export async function getDecisionAudit(decisionId: string): Promise<{
+  success: boolean;
+  data: {
+    decision_id: string;
+    audit_log: Array<{
+      timestamp: string;
+      actor: string;
+      action: string;
+      from_status?: string;
+      to_status?: string;
+      notes?: string;
+    }>;
+  };
+}> {
+  return fetchAPI(`/api/decisions/${decisionId}/audit`);
+}
+
+export async function getDecisionOutcomes(decisionId: string): Promise<{
+  success: boolean;
+  data: {
+    decision_id: string;
+    outcomes: {
+      tracking_start: string;
+      tracking_end: string;
+      expected_vs_actual: Array<{
+        metric: string;
+        expected: number;
+        actual: number;
+        variance: number;
+        variance_percent: number;
+        within_tolerance: boolean;
+      }>;
+      learning_insights: string[];
+    } | null;
+  };
+}> {
+  return fetchAPI(`/api/decisions/${decisionId}/outcomes`);
+}
+
+// =============================================================================
+// SIMULATION API
+// Per spec Section 8: Simulation Layer
+// =============================================================================
+
+export interface DisruptionSimulationResult {
+  success: boolean;
+  data: {
+    scenario: {
+      airport: string;
+      start_time: string;
+      duration_hours: number;
+      impact_type: string;
+      delay_per_flight: number;
+    };
+    baseline: {
+      completion_factor: number;
+      otp: number;
+      passengers_disrupted: number;
+      recovery_time_hours: number;
+      revenue_impact: number;
+      rasm_impact: number;
+    };
+    scenario_impact: {
+      completion_factor: number;
+      otp: number;
+      passengers_disrupted: number;
+      recovery_time_hours: number;
+      revenue_impact: number;
+      rasm_impact: number;
+    };
+    affected_flights: {
+      departures: number;
+      arrivals: number;
+      total: number;
+    };
+    vulnerable_flights: Array<{
+      flight: string;
+      route: string;
+      time: string;
+      passengers_affected: number;
+      downstream_impact: string;
+    }>;
+    recommended_mitigations: string[];
+    recovery_timeline: Array<{
+      time: string;
+      status: string;
+      flights_affected: number;
+    }>;
+    confidence_score: number;
+  };
+}
+
+export async function simulateDisruption(scenario: {
+  airport: string;
+  start_time: string;
+  duration_hours: number;
+  impact_type: string;
+  delay_per_flight?: number;
+}): Promise<DisruptionSimulationResult> {
+  return fetchAPI('/api/simulate/disruption', {
+    method: 'POST',
+    body: JSON.stringify(scenario),
+  });
+}
+
+export interface EquipmentSwapSimulationResult {
+  success: boolean;
+  data: {
+    scenario: {
+      route: string;
+      current_equipment: string;
+      proposed_equipment: string;
+    };
+    current_state: {
+      seats: number;
+      load_factor: number;
+      yield: number;
+      profit_per_day: number;
+      rasm: number;
+    };
+    proposed_state: {
+      seats: number;
+      load_factor: number;
+      yield: number;
+      profit_per_day: number;
+      rasm: number;
+    };
+    delta: {
+      seats: number;
+      load_factor: number;
+      profit_per_day: number;
+      rasm: number;
+    };
+    feasibility: {
+      status: string;
+      fleet_available: boolean;
+      crew_compatible: boolean;
+      gate_compatible: boolean;
+      mx_clear: boolean;
+    };
+    annual_impact: number;
+    confidence_score: number;
+  };
+}
+
+export async function simulateEquipmentSwapV2(scenario: {
+  origin: string;
+  destination: string;
+  current_equipment: string;
+  proposed_equipment: string;
+}): Promise<EquipmentSwapSimulationResult> {
+  return fetchAPI('/api/simulate/equipment-swap', {
+    method: 'POST',
+    body: JSON.stringify(scenario),
+  });
+}
+
+// =============================================================================
+// DATA HEALTH API
+// Per spec Section 6.4: Data Health Service
+// =============================================================================
+
+export interface DomainHealth {
+  domain: string;
+  score: number;
+  status: 'HEALTHY' | 'DEGRADED' | 'CRITICAL';
+  last_refresh: string | null;
+  record_count: number;
+  completeness: number;
+  issues: Array<{
+    severity: 'WARNING' | 'ERROR' | 'CRITICAL';
+    type: string;
+    description: string;
+  }>;
+}
+
+export interface DataHealthResponse {
+  success: boolean;
+  data: {
+    overall_score: number;
+    overall_status: 'HEALTHY' | 'DEGRADED' | 'CRITICAL';
+    last_updated: string;
+    domains: DomainHealth[];
+    active_issues: Array<{
+      severity: string;
+      type: string;
+      description: string;
+    }>;
+    total_records: number;
+  };
+}
+
+export async function getDataHealth(): Promise<DataHealthResponse> {
+  return fetchAPI('/api/data-health');
+}
+
+export async function getDomainHealth(domain: string): Promise<{ success: boolean; data: DomainHealth }> {
+  return fetchAPI(`/api/data-health/${domain}`);
+}
+
+// =============================================================================
+// METRIC REGISTRY API
+// Per spec Section 6.5
+// =============================================================================
+
+export interface MetricDefinition {
+  id: string;
+  name: string;
+  description: string;
+  formula: string;
+  unit: string;
+  min_valid: number;
+  max_valid: number;
+  refresh_frequency: string;
+  owner: string;
+}
+
+export async function getAllMetrics(): Promise<{ success: boolean; data: MetricDefinition[] }> {
+  return fetchAPI('/api/metrics');
+}
+
+export async function getMetric(metricId: string): Promise<{
+  success: boolean;
+  data: MetricDefinition & {
+    current_value: number;
+    last_updated: string;
+    confidence_score: number;
+  };
+}> {
+  return fetchAPI(`/api/metrics/${metricId}`);
+}
+
+export async function validateMetricValue(
+  metricId: string,
+  value: number
+): Promise<{
+  success: boolean;
+  data: {
+    metric_id: string;
+    value: number;
+    is_valid: boolean;
+    min_valid: number;
+    max_valid: number;
+    error?: string;
+    clamped_value?: number;
+  };
+}> {
+  return fetchAPI(`/api/metrics/validate?metric_id=${metricId}&value=${value}`, { method: 'POST' });
+}

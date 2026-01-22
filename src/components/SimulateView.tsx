@@ -4,23 +4,19 @@ import { useState } from 'react';
 import {
   FlaskConical,
   Play,
-  Plus,
   Settings,
   Clock,
   Plane,
   Cloud,
   Users,
-  Wrench,
-  DollarSign,
   AlertTriangle,
-  ArrowRight,
   TrendingUp,
   TrendingDown,
   Minus,
   CheckCircle,
-  XCircle,
   Shuffle,
 } from 'lucide-react';
+import * as api from '@/lib/api';
 
 /**
  * SimulateView - What-If Scenario Analysis
@@ -98,13 +94,89 @@ export function SimulateView() {
     delayPerFlight: 45,
   });
 
-  const runSimulation = () => {
+  const runSimulation = async () => {
     setIsRunning(true);
 
-    // Simulate API call delay
-    setTimeout(() => {
-      // Mock simulation results
-      const mockResult: SimulationResult = {
+    try {
+      // Call real API based on scenario type
+      if (scenarioType === 'disruption') {
+        const apiResult = await api.simulateDisruption({
+          airport: disruptionParams.airport,
+          start_time: disruptionParams.startTime,
+          duration_hours: disruptionParams.duration,
+          impact_type: disruptionParams.impactType,
+          delay_per_flight: disruptionParams.delayPerFlight,
+        });
+
+        // Map API response to our SimulationResult interface
+        const mappedResult: SimulationResult = {
+          baseline: {
+            completionFactor: apiResult.data.baseline.completion_factor,
+            otp: apiResult.data.baseline.otp,
+            passengersDisrupted: apiResult.data.baseline.passengers_disrupted,
+            recoveryTime: apiResult.data.baseline.recovery_time_hours,
+            revenueImpact: apiResult.data.baseline.revenue_impact,
+            rasmImpact: apiResult.data.baseline.rasm_impact,
+          },
+          scenario: {
+            completionFactor: apiResult.data.scenario_impact.completion_factor,
+            otp: apiResult.data.scenario_impact.otp,
+            passengersDisrupted: apiResult.data.scenario_impact.passengers_disrupted,
+            recoveryTime: apiResult.data.scenario_impact.recovery_time_hours,
+            revenueImpact: apiResult.data.scenario_impact.revenue_impact,
+            rasmImpact: apiResult.data.scenario_impact.rasm_impact,
+          },
+          vulnerableFlights: apiResult.data.vulnerable_flights.map((f) => ({
+            flight: f.flight,
+            route: f.route,
+            time: f.time,
+            passengersAffected: f.passengers_affected,
+          })),
+          recommendedMitigations: apiResult.data.recommended_mitigations,
+        };
+
+        setResult(mappedResult);
+      } else {
+        // For non-disruption scenarios, use demo data (fallback)
+        // TODO: Add more scenario type APIs when available
+        const demoResult: SimulationResult = {
+          baseline: {
+            completionFactor: 98.2,
+            otp: 81,
+            passengersDisrupted: 120,
+            recoveryTime: 0,
+            revenueImpact: 0,
+            rasmImpact: 0,
+          },
+          scenario: {
+            completionFactor: 96.5,
+            otp: 74,
+            passengersDisrupted: 890,
+            recoveryTime: 3.2,
+            revenueImpact: -120000,
+            rasmImpact: -0.04,
+          },
+          vulnerableFlights: [
+            { flight: 'NK234', route: 'MCO-DTW', time: '10:30', passengersAffected: 180 },
+            { flight: 'NK567', route: 'FLL-LAS', time: '12:15', passengersAffected: 145 },
+          ],
+          recommendedMitigations: [
+            'Monitor situation and prepare contingency plans',
+            'Pre-position crew at affected stations',
+          ],
+        };
+        setResult(demoResult);
+      }
+
+      setActiveScenario({
+        name: scenarioName || `${disruptionParams.airport} Weather Impact`,
+        type: scenarioType,
+        parameters: disruptionParams,
+      });
+    } catch (error) {
+      console.error('Simulation failed:', error);
+      // Fallback to demo data on API error
+      const fallbackResult: SimulationResult = {
         baseline: {
           completionFactor: 98.2,
           otp: 81,
@@ -125,25 +197,22 @@ export function SimulateView() {
           { flight: 'NK234', route: 'ATL-MCO', time: '15:30', passengersAffected: 420 },
           { flight: 'NK567', route: 'ATL-FLL', time: '16:15', passengersAffected: 380 },
           { flight: 'NK891', route: 'ATL-DEN', time: '14:45', passengersAffected: 290 },
-          { flight: 'NK123', route: 'ATL-LAS', time: '15:00', passengersAffected: 245 },
-          { flight: 'NK456', route: 'ATL-EWR', time: '16:30', passengersAffected: 210 },
         ],
         recommendedMitigations: [
-          'Pre-cancel NK891 (lowest load, highest buffer recovery)',
-          'Pre-position spare aircraft at ATL from MCO',
-          'Call 2 reserve crews at ATL',
-          'Proactive rebooking for connections with <60min buffer',
+          '[Demo Data] Pre-cancel lowest-load flights',
+          '[Demo Data] Pre-position spare aircraft',
+          '[Demo Data] Call reserve crews',
         ],
       };
-
-      setResult(mockResult);
-      setIsRunning(false);
+      setResult(fallbackResult);
       setActiveScenario({
         name: scenarioName || `${disruptionParams.airport} Weather Impact`,
         type: scenarioType,
         parameters: disruptionParams,
       });
-    }, 2000);
+    } finally {
+      setIsRunning(false);
+    }
   };
 
   const getDelta = (baseline: number, scenario: number) => {

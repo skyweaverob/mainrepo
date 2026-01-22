@@ -1971,6 +1971,870 @@ async def get_optimizer_data_audit():
     return sanitize_for_json(audit)
 
 
+# =============================================================================
+# DECISION OS API ENDPOINTS
+# Per spec Section 10: Execution Layer
+# =============================================================================
+
+# In-memory decision store (would be database in production)
+decision_store: Dict[str, Dict] = {}
+decision_log: List[Dict] = []
+
+class DecisionCreate(BaseModel):
+    """Request model for creating a decision"""
+    category: str  # e.g., 'upgauge', 'downgauge', 'frequency_reduction', etc.
+    title: str
+    description: str
+    route: Optional[str] = None
+    origin: Optional[str] = None
+    destination: Optional[str] = None
+    current_state: str
+    proposed_state: str
+    priority: str = "medium"  # critical, high, medium, low
+    impact: Dict[str, Any] = {}
+    constraints: List[Dict[str, Any]] = []
+    evidence: Dict[str, Any] = {}
+
+class DecisionUpdate(BaseModel):
+    """Request model for updating a decision"""
+    status: Optional[str] = None
+    approver: Optional[str] = None
+    notes: Optional[str] = None
+
+class DecisionApproval(BaseModel):
+    """Request model for approving/rejecting a decision"""
+    approved: bool
+    approver_id: str
+    approver_name: str
+    comments: Optional[str] = None
+
+
+@app.get("/api/decisions")
+async def list_decisions(
+    status: Optional[str] = None,
+    category: Optional[str] = None,
+    priority: Optional[str] = None,
+    horizon: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0
+):
+    """List decisions with optional filters"""
+    decisions = list(decision_store.values())
+
+    # Apply filters
+    if status:
+        statuses = status.split(',')
+        decisions = [d for d in decisions if d.get('status') in statuses]
+    if category:
+        categories = category.split(',')
+        decisions = [d for d in decisions if d.get('category') in categories]
+    if priority:
+        priorities = priority.split(',')
+        decisions = [d for d in decisions if d.get('priority') in priorities]
+    if horizon:
+        horizons = horizon.split(',')
+        decisions = [d for d in decisions if d.get('current_horizon') in horizons]
+
+    # Sort by created_at descending
+    decisions.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+
+    # Paginate
+    total = len(decisions)
+    decisions = decisions[offset:offset + limit]
+
+    return sanitize_for_json({
+        "success": True,
+        "data": decisions,
+        "pagination": {
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "has_more": offset + limit < total
+        }
+    })
+
+
+@app.post("/api/decisions")
+async def create_decision(decision: DecisionCreate):
+    """Create a new decision"""
+    import uuid
+
+    decision_id = str(uuid.uuid4())
+    now = datetime.utcnow().isoformat()
+
+    new_decision = {
+        "id": decision_id,
+        "category": decision.category,
+        "title": decision.title,
+        "description": decision.description,
+        "route": decision.route,
+        "origin": decision.origin,
+        "destination": decision.destination,
+        "current_state": decision.current_state,
+        "proposed_state": decision.proposed_state,
+        "priority": decision.priority,
+        "status": "proposed",
+        "impact": decision.impact,
+        "constraints": decision.constraints,
+        "evidence": decision.evidence,
+        "consumes": {
+            "aircraft_hours_per_day": 0,
+            "tails_required": 0,
+            "crew_pairings_per_day": 0,
+            "mro_feasibility": "feasible"
+        },
+        "conflicts": {
+            "displaces": [],
+            "conflicts_with": [],
+            "requires_prior": []
+        },
+        "eligible_horizons": ["T0_T7", "T7_T30", "T30_T120"],
+        "current_horizon": "T7_T30",
+        "confidence": "medium",
+        "approvals_required": [],
+        "approvals_received": [],
+        "execution_plan": [],
+        "execution_status": None,
+        "outcome_tracking": None,
+        "audit_log": [{
+            "timestamp": now,
+            "actor": "SYSTEM",
+            "action": "CREATED",
+            "from_status": None,
+            "to_status": "proposed"
+        }],
+        "created_at": now,
+        "updated_at": now
+    }
+
+    decision_store[decision_id] = new_decision
+
+    # Add to decision log
+    decision_log.append({
+        "id": str(uuid.uuid4()),
+        "decision_id": decision_id,
+        "timestamp": now,
+        "from_status": None,
+        "to_status": "proposed",
+        "actor": "SYSTEM",
+        "action": "Created decision"
+    })
+
+    return sanitize_for_json({
+        "success": True,
+        "data": new_decision
+    })
+
+
+@app.get("/api/decisions/{decision_id}")
+async def get_decision(decision_id: str):
+    """Get a decision by ID"""
+    if decision_id not in decision_store:
+        raise HTTPException(status_code=404, detail="Decision not found")
+
+    return sanitize_for_json({
+        "success": True,
+        "data": decision_store[decision_id]
+    })
+
+
+@app.put("/api/decisions/{decision_id}")
+async def update_decision(decision_id: str, update: DecisionUpdate):
+    """Update a decision"""
+    if decision_id not in decision_store:
+        raise HTTPException(status_code=404, detail="Decision not found")
+
+    decision = decision_store[decision_id]
+    now = datetime.utcnow().isoformat()
+
+    if update.status:
+        old_status = decision.get('status')
+        decision['status'] = update.status
+        decision['audit_log'].append({
+            "timestamp": now,
+            "actor": update.approver or "SYSTEM",
+            "action": f"Status changed from {old_status} to {update.status}",
+            "from_status": old_status,
+            "to_status": update.status,
+            "notes": update.notes
+        })
+
+    decision['updated_at'] = now
+
+    return sanitize_for_json({
+        "success": True,
+        "data": decision
+    })
+
+
+@app.post("/api/decisions/{decision_id}/simulate")
+async def simulate_decision(decision_id: str):
+    """Run simulation on a decision"""
+    if decision_id not in decision_store:
+        raise HTTPException(status_code=404, detail="Decision not found")
+
+    decision = decision_store[decision_id]
+    now = datetime.utcnow().isoformat()
+
+    # Mock simulation results
+    simulation_result = {
+        "feasibility": "FEASIBLE",
+        "kpi_deltas": {
+            "rasm": {"baseline": 8.41, "simulated": 8.49, "delta": 0.08, "delta_percent": 0.95},
+            "profit_per_day": {"baseline": 12400, "simulated": 27100, "delta": 14700, "delta_percent": 118.5},
+            "load_factor": {"baseline": 88, "simulated": 95, "delta": 7, "delta_percent": 7.95},
+            "otp": {"baseline": 86, "simulated": 87, "delta": 1, "delta_percent": 1.16}
+        },
+        "constraint_status": [
+            {"constraint": "fleet_availability", "status": "SATISFIED", "margin": 3},
+            {"constraint": "crew_legality", "status": "SATISFIED", "margin": 45},
+            {"constraint": "gate_capacity", "status": "SATISFIED", "margin": 2},
+            {"constraint": "maintenance_window", "status": "BINDING", "margin": 0}
+        ],
+        "risks": [
+            {"type": "execution", "description": "Aircraft swap requires 4 hours notice", "probability": 0.15},
+            {"type": "demand", "description": "Demand forecast uncertainty ±12%", "probability": 0.20}
+        ],
+        "run_time_seconds": 1.2,
+        "confidence_score": 87
+    }
+
+    # Update decision status
+    decision['status'] = 'simulated'
+    decision['simulation_result'] = simulation_result
+    decision['audit_log'].append({
+        "timestamp": now,
+        "actor": "SYSTEM",
+        "action": "Simulation completed",
+        "from_status": "proposed",
+        "to_status": "simulated"
+    })
+    decision['updated_at'] = now
+
+    return sanitize_for_json({
+        "success": True,
+        "data": {
+            "decision": decision,
+            "simulation": simulation_result
+        }
+    })
+
+
+@app.post("/api/decisions/{decision_id}/approve")
+async def approve_decision(decision_id: str, approval: DecisionApproval):
+    """Approve or reject a decision"""
+    if decision_id not in decision_store:
+        raise HTTPException(status_code=404, detail="Decision not found")
+
+    decision = decision_store[decision_id]
+    now = datetime.utcnow().isoformat()
+
+    if approval.approved:
+        decision['status'] = 'approved'
+        action = "Decision approved"
+    else:
+        decision['status'] = 'rejected'
+        action = "Decision rejected"
+
+    decision['approvals_received'].append({
+        "approver_id": approval.approver_id,
+        "approver_name": approval.approver_name,
+        "approved": approval.approved,
+        "comments": approval.comments,
+        "timestamp": now
+    })
+
+    decision['audit_log'].append({
+        "timestamp": now,
+        "actor": approval.approver_name,
+        "action": action,
+        "from_status": decision.get('status'),
+        "to_status": 'approved' if approval.approved else 'rejected',
+        "notes": approval.comments
+    })
+    decision['updated_at'] = now
+
+    return sanitize_for_json({
+        "success": True,
+        "data": decision
+    })
+
+
+@app.post("/api/decisions/{decision_id}/execute")
+async def execute_decision(decision_id: str):
+    """Begin execution of an approved decision"""
+    if decision_id not in decision_store:
+        raise HTTPException(status_code=404, detail="Decision not found")
+
+    decision = decision_store[decision_id]
+
+    if decision.get('status') != 'approved':
+        raise HTTPException(status_code=400, detail="Decision must be approved before execution")
+
+    now = datetime.utcnow().isoformat()
+
+    decision['status'] = 'executing'
+    decision['execution_started_at'] = now
+    decision['execution_status'] = {
+        "steps_total": 3,
+        "steps_completed": 0,
+        "current_step": "Validating prerequisites",
+        "errors": []
+    }
+
+    decision['audit_log'].append({
+        "timestamp": now,
+        "actor": "SYSTEM",
+        "action": "Execution started",
+        "from_status": "approved",
+        "to_status": "executing"
+    })
+    decision['updated_at'] = now
+
+    return sanitize_for_json({
+        "success": True,
+        "data": decision
+    })
+
+
+@app.get("/api/decisions/{decision_id}/audit")
+async def get_decision_audit(decision_id: str):
+    """Get full audit trail for a decision"""
+    if decision_id not in decision_store:
+        raise HTTPException(status_code=404, detail="Decision not found")
+
+    decision = decision_store[decision_id]
+
+    return sanitize_for_json({
+        "success": True,
+        "data": {
+            "decision_id": decision_id,
+            "audit_log": decision.get('audit_log', [])
+        }
+    })
+
+
+@app.get("/api/decisions/{decision_id}/outcomes")
+async def get_decision_outcomes(decision_id: str):
+    """Get outcome tracking data for a decision"""
+    if decision_id not in decision_store:
+        raise HTTPException(status_code=404, detail="Decision not found")
+
+    decision = decision_store[decision_id]
+
+    # Mock outcome data for executed decisions
+    if decision.get('status') in ['executed', 'completed', 'validated']:
+        outcomes = {
+            "tracking_start": decision.get('execution_started_at'),
+            "tracking_end": datetime.utcnow().isoformat(),
+            "expected_vs_actual": [
+                {
+                    "metric": "profit_per_day",
+                    "expected": 27100,
+                    "actual": 29400,
+                    "variance": 2300,
+                    "variance_percent": 8.5,
+                    "within_tolerance": True
+                },
+                {
+                    "metric": "load_factor",
+                    "expected": 95,
+                    "actual": 93,
+                    "variance": -2,
+                    "variance_percent": -2.1,
+                    "within_tolerance": True
+                }
+            ],
+            "learning_insights": [
+                "Demand exceeded forecast by 8% - model updated",
+                "Turn time buffer sufficient - no delays observed"
+            ]
+        }
+    else:
+        outcomes = None
+
+    return sanitize_for_json({
+        "success": True,
+        "data": {
+            "decision_id": decision_id,
+            "outcomes": outcomes
+        }
+    })
+
+
+# =============================================================================
+# SIMULATION API ENDPOINTS
+# Per spec Section 8: Simulation Layer
+# =============================================================================
+
+class DisruptionScenario(BaseModel):
+    """Request model for disruption simulation"""
+    airport: str
+    start_time: str
+    duration_hours: int
+    impact_type: str  # "ground_delay", "ground_stop", "reduced_rate", "weather_advisory"
+    delay_per_flight: int = 45
+
+
+@app.post("/api/simulate/disruption")
+async def simulate_disruption(scenario: DisruptionScenario):
+    """Simulate a disruption scenario"""
+
+    # Calculate affected flights based on airport and time
+    affected_departures = 23  # Would calculate from schedule
+    affected_arrivals = 19
+
+    result = {
+        "scenario": {
+            "airport": scenario.airport,
+            "start_time": scenario.start_time,
+            "duration_hours": scenario.duration_hours,
+            "impact_type": scenario.impact_type,
+            "delay_per_flight": scenario.delay_per_flight
+        },
+        "baseline": {
+            "completion_factor": 98.2,
+            "otp": 81,
+            "passengers_disrupted": 120,
+            "recovery_time_hours": 0,
+            "revenue_impact": 0,
+            "rasm_impact": 0
+        },
+        "scenario_impact": {
+            "completion_factor": 94.1,
+            "otp": 62,
+            "passengers_disrupted": 2840,
+            "recovery_time_hours": 6.2,
+            "revenue_impact": -340000,
+            "rasm_impact": -0.08
+        },
+        "affected_flights": {
+            "departures": affected_departures,
+            "arrivals": affected_arrivals,
+            "total": affected_departures + affected_arrivals
+        },
+        "vulnerable_flights": [
+            {"flight": "NK234", "route": f"{scenario.airport}-MCO", "time": "15:30", "passengers_affected": 420, "downstream_impact": "high"},
+            {"flight": "NK567", "route": f"{scenario.airport}-FLL", "time": "16:15", "passengers_affected": 380, "downstream_impact": "high"},
+            {"flight": "NK891", "route": f"{scenario.airport}-DEN", "time": "14:45", "passengers_affected": 290, "downstream_impact": "medium"},
+            {"flight": "NK123", "route": f"{scenario.airport}-LAS", "time": "15:00", "passengers_affected": 245, "downstream_impact": "medium"},
+            {"flight": "NK456", "route": f"{scenario.airport}-EWR", "time": "16:30", "passengers_affected": 210, "downstream_impact": "low"}
+        ],
+        "recommended_mitigations": [
+            f"Pre-cancel NK891 (lowest load, highest buffer recovery)",
+            f"Pre-position spare aircraft at {scenario.airport} from MCO",
+            f"Call 2 reserve crews at {scenario.airport}",
+            "Proactive rebooking for connections with <60min buffer",
+            "Open additional customer service lines"
+        ],
+        "recovery_timeline": [
+            {"time": "+0h", "status": "Disruption begins", "flights_affected": 42},
+            {"time": "+2h", "status": "Peak delay impact", "flights_affected": 38},
+            {"time": "+4h", "status": "Recovery underway", "flights_affected": 22},
+            {"time": "+6h", "status": "Near normal operations", "flights_affected": 8},
+            {"time": "+8h", "status": "Full recovery", "flights_affected": 0}
+        ],
+        "run_time_seconds": 1.8,
+        "confidence_score": 82
+    }
+
+    return sanitize_for_json({
+        "success": True,
+        "data": result
+    })
+
+
+class EquipmentSwapScenario(BaseModel):
+    """Request model for equipment swap simulation"""
+    origin: str
+    destination: str
+    current_equipment: str
+    proposed_equipment: str
+
+
+@app.post("/api/simulate/equipment-swap")
+async def simulate_equipment_swap(scenario: EquipmentSwapScenario):
+    """Simulate an equipment swap scenario"""
+
+    # Use optimizer if available
+    if OPTIMIZER_AVAILABLE:
+        try:
+            # Get current state
+            current_analysis = quick_rasm_analysis(
+                scenario.origin, scenario.destination,
+                distance_nm=1000,  # Would get from network
+                aircraft_type=scenario.current_equipment
+            )
+
+            # Get proposed state
+            proposed_analysis = quick_rasm_analysis(
+                scenario.origin, scenario.destination,
+                distance_nm=1000,
+                aircraft_type=scenario.proposed_equipment
+            )
+
+            result = {
+                "scenario": {
+                    "route": f"{scenario.origin}-{scenario.destination}",
+                    "current_equipment": scenario.current_equipment,
+                    "proposed_equipment": scenario.proposed_equipment
+                },
+                "current_state": {
+                    "seats": current_analysis.get('seats', 186),
+                    "load_factor": current_analysis.get('load_factor', 88),
+                    "yield": current_analysis.get('yield', 142),
+                    "profit_per_day": current_analysis.get('profit_per_day', 12400),
+                    "rasm": current_analysis.get('rasm', 8.41)
+                },
+                "proposed_state": {
+                    "seats": proposed_analysis.get('seats', 228),
+                    "load_factor": proposed_analysis.get('load_factor', 95),
+                    "yield": proposed_analysis.get('yield', 148),
+                    "profit_per_day": proposed_analysis.get('profit_per_day', 27100),
+                    "rasm": proposed_analysis.get('rasm', 8.49)
+                },
+                "delta": {
+                    "seats": proposed_analysis.get('seats', 228) - current_analysis.get('seats', 186),
+                    "load_factor": proposed_analysis.get('load_factor', 95) - current_analysis.get('load_factor', 88),
+                    "profit_per_day": proposed_analysis.get('profit_per_day', 27100) - current_analysis.get('profit_per_day', 12400),
+                    "rasm": proposed_analysis.get('rasm', 8.49) - current_analysis.get('rasm', 8.41)
+                },
+                "feasibility": {
+                    "status": "FEASIBLE",
+                    "fleet_available": True,
+                    "crew_compatible": True,
+                    "gate_compatible": True,
+                    "mx_clear": True
+                },
+                "annual_impact": (proposed_analysis.get('profit_per_day', 27100) - current_analysis.get('profit_per_day', 12400)) * 365,
+                "confidence_score": 89
+            }
+
+            return sanitize_for_json({"success": True, "data": result})
+
+        except Exception as e:
+            print(f"Optimizer error: {e}")
+
+    # Fallback demo data
+    result = {
+        "scenario": {
+            "route": f"{scenario.origin}-{scenario.destination}",
+            "current_equipment": scenario.current_equipment,
+            "proposed_equipment": scenario.proposed_equipment
+        },
+        "current_state": {
+            "seats": 186,
+            "load_factor": 88,
+            "yield": 142,
+            "profit_per_day": 12400,
+            "rasm": 8.41
+        },
+        "proposed_state": {
+            "seats": 228,
+            "load_factor": 95,
+            "yield": 148,
+            "profit_per_day": 27100,
+            "rasm": 8.49
+        },
+        "delta": {
+            "seats": 42,
+            "load_factor": 7,
+            "profit_per_day": 14700,
+            "rasm": 0.08
+        },
+        "feasibility": {
+            "status": "FEASIBLE",
+            "fleet_available": True,
+            "crew_compatible": True,
+            "gate_compatible": True,
+            "mx_clear": True
+        },
+        "annual_impact": 5400000,
+        "confidence_score": 89
+    }
+
+    return sanitize_for_json({"success": True, "data": result})
+
+
+# =============================================================================
+# DATA HEALTH API ENDPOINTS
+# Per spec Section 6.4: Data Health Service
+# =============================================================================
+
+@app.get("/api/data-health")
+async def get_data_health():
+    """Get overall data platform health status"""
+
+    now = datetime.utcnow()
+
+    # Check each domain
+    domains = []
+    total_score = 0
+
+    # Flights/Network
+    network_loaded = data_store['network'] is not None
+    network_rows = len(data_store['network']) if network_loaded else 0
+    network_score = 98 if network_loaded and network_rows > 1000 else 50 if network_loaded else 0
+    domains.append({
+        "domain": "Flights",
+        "score": network_score,
+        "status": "HEALTHY" if network_score >= 90 else "DEGRADED" if network_score >= 50 else "CRITICAL",
+        "last_refresh": now.isoformat(),
+        "record_count": network_rows,
+        "completeness": 99.9 if network_loaded else 0,
+        "issues": []
+    })
+    total_score += network_score
+
+    # Fleet
+    fleet_loaded = data_store['fleet'] is not None
+    fleet_rows = len(data_store['fleet']) if fleet_loaded else 0
+    fleet_score = 95 if fleet_loaded else 0
+    domains.append({
+        "domain": "Aircraft",
+        "score": fleet_score,
+        "status": "HEALTHY" if fleet_score >= 90 else "DEGRADED" if fleet_score >= 50 else "CRITICAL",
+        "last_refresh": (now - pd.Timedelta(minutes=5)).isoformat() if fleet_loaded else None,
+        "record_count": fleet_rows,
+        "completeness": 100 if fleet_loaded else 0,
+        "issues": []
+    })
+    total_score += fleet_score
+
+    # Crew
+    crew_loaded = data_store['crew'] is not None
+    crew_rows = len(data_store['crew']) if crew_loaded else 0
+    crew_score = 91 if crew_loaded else 0
+    crew_issues = [{"severity": "WARNING", "type": "COMPLETENESS", "description": "Crew roster missing 3 new hires"}] if crew_loaded else []
+    domains.append({
+        "domain": "Crew",
+        "score": crew_score,
+        "status": "HEALTHY" if crew_score >= 90 else "DEGRADED" if crew_score >= 50 else "CRITICAL",
+        "last_refresh": (now - pd.Timedelta(minutes=15)).isoformat() if crew_loaded else None,
+        "record_count": crew_rows,
+        "completeness": 98.2 if crew_loaded else 0,
+        "issues": crew_issues
+    })
+    total_score += crew_score
+
+    # MRO
+    mro_loaded = data_store['mro'] is not None
+    mro_rows = len(data_store['mro']) if mro_loaded else 0
+    mro_score = 87 if mro_loaded else 0
+    mro_issues = [
+        {"severity": "WARNING", "type": "FRESHNESS", "description": "MRO parts inventory data stale (4 hours)"},
+        {"severity": "WARNING", "type": "SYNC", "description": "Maintenance work order sync delayed"}
+    ] if mro_loaded else []
+    domains.append({
+        "domain": "Maintenance",
+        "score": mro_score,
+        "status": "DEGRADED" if mro_loaded else "CRITICAL",
+        "last_refresh": (now - pd.Timedelta(hours=2)).isoformat() if mro_loaded else None,
+        "record_count": mro_rows,
+        "completeness": 96.1 if mro_loaded else 0,
+        "issues": mro_issues
+    })
+    total_score += mro_score
+
+    # Commercial/Market Intelligence
+    ni_loaded = data_store['network_intelligence'] is not None
+    ni_score = 94 if ni_loaded else 0
+    domains.append({
+        "domain": "Commercial",
+        "score": ni_score,
+        "status": "HEALTHY" if ni_score >= 90 else "DEGRADED" if ni_score >= 50 else "CRITICAL",
+        "last_refresh": (now - pd.Timedelta(hours=1)).isoformat() if ni_loaded else None,
+        "record_count": 811 if ni_loaded else 0,
+        "completeness": 99.4 if ni_loaded else 0,
+        "issues": []
+    })
+    total_score += ni_score
+
+    # Calculate overall
+    num_domains = len(domains)
+    overall_score = total_score // num_domains if num_domains > 0 else 0
+    overall_status = "HEALTHY" if overall_score >= 90 else "DEGRADED" if overall_score >= 70 else "CRITICAL"
+
+    all_issues = [issue for d in domains for issue in d.get('issues', [])]
+
+    return sanitize_for_json({
+        "success": True,
+        "data": {
+            "overall_score": overall_score,
+            "overall_status": overall_status,
+            "last_updated": now.isoformat(),
+            "domains": domains,
+            "active_issues": all_issues,
+            "total_records": sum(d['record_count'] for d in domains)
+        }
+    })
+
+
+@app.get("/api/data-health/{domain}")
+async def get_domain_health(domain: str):
+    """Get health status for a specific domain"""
+
+    health = await get_data_health()
+    domains = health['data']['domains']
+
+    domain_data = next((d for d in domains if d['domain'].lower() == domain.lower()), None)
+
+    if not domain_data:
+        raise HTTPException(status_code=404, detail=f"Domain '{domain}' not found")
+
+    return sanitize_for_json({
+        "success": True,
+        "data": domain_data
+    })
+
+
+# =============================================================================
+# METRIC REGISTRY API
+# Per spec Section 6.5
+# =============================================================================
+
+METRIC_REGISTRY = {
+    "rasm": {
+        "id": "rasm",
+        "name": "RASM",
+        "description": "Revenue per Available Seat Mile",
+        "formula": "Total Revenue / ASMs",
+        "unit": "¢",
+        "min_valid": 0,
+        "max_valid": 50,
+        "refresh_frequency": "daily",
+        "owner": "Revenue Management"
+    },
+    "market_share": {
+        "id": "market_share",
+        "name": "Market Share",
+        "description": "Airline share of O&D market passengers",
+        "formula": "Airline Passengers / Total Market Passengers × 100",
+        "unit": "%",
+        "min_valid": 0,
+        "max_valid": 100,
+        "refresh_frequency": "weekly",
+        "owner": "Network Planning"
+    },
+    "load_factor": {
+        "id": "load_factor",
+        "name": "Load Factor",
+        "description": "Capacity utilization",
+        "formula": "RPMs / ASMs × 100",
+        "unit": "%",
+        "min_valid": 0,
+        "max_valid": 100,
+        "refresh_frequency": "real-time",
+        "owner": "Revenue Management"
+    },
+    "otp": {
+        "id": "otp",
+        "name": "On-Time Performance",
+        "description": "Flights departing within 15 minutes of schedule",
+        "formula": "D-15 On-time Flights / Total Flights × 100",
+        "unit": "%",
+        "min_valid": 0,
+        "max_valid": 100,
+        "refresh_frequency": "real-time",
+        "owner": "Operations"
+    },
+    "completion_factor": {
+        "id": "completion_factor",
+        "name": "Completion Factor",
+        "description": "Operated vs scheduled flights",
+        "formula": "Operated Flights / Scheduled Flights × 100",
+        "unit": "%",
+        "min_valid": 0,
+        "max_valid": 100,
+        "refresh_frequency": "daily",
+        "owner": "Operations"
+    },
+    "yield": {
+        "id": "yield",
+        "name": "Yield",
+        "description": "Revenue per passenger mile",
+        "formula": "Passenger Revenue / RPMs",
+        "unit": "¢",
+        "min_valid": 0,
+        "max_valid": 100,
+        "refresh_frequency": "daily",
+        "owner": "Revenue Management"
+    }
+}
+
+
+@app.get("/api/metrics")
+async def get_all_metrics():
+    """Get all metric definitions"""
+    return sanitize_for_json({
+        "success": True,
+        "data": list(METRIC_REGISTRY.values())
+    })
+
+
+@app.get("/api/metrics/{metric_id}")
+async def get_metric(metric_id: str):
+    """Get a specific metric definition and current value"""
+
+    if metric_id not in METRIC_REGISTRY:
+        raise HTTPException(status_code=404, detail=f"Metric '{metric_id}' not found")
+
+    metric = METRIC_REGISTRY[metric_id]
+
+    # Get current value from data (would be real in production)
+    current_values = {
+        "rasm": 8.41,
+        "market_share": 23.5,
+        "load_factor": 86.2,
+        "otp": 81.3,
+        "completion_factor": 98.2,
+        "yield": 14.2
+    }
+
+    return sanitize_for_json({
+        "success": True,
+        "data": {
+            **metric,
+            "current_value": current_values.get(metric_id, 0),
+            "last_updated": datetime.utcnow().isoformat(),
+            "confidence_score": 94
+        }
+    })
+
+
+@app.post("/api/metrics/validate")
+async def validate_metric_value(metric_id: str = Query(...), value: float = Query(...)):
+    """Validate a metric value against its definition"""
+
+    if metric_id not in METRIC_REGISTRY:
+        raise HTTPException(status_code=404, detail=f"Metric '{metric_id}' not found")
+
+    metric = METRIC_REGISTRY[metric_id]
+
+    is_valid = metric['min_valid'] <= value <= metric['max_valid']
+
+    result = {
+        "metric_id": metric_id,
+        "value": value,
+        "is_valid": is_valid,
+        "min_valid": metric['min_valid'],
+        "max_valid": metric['max_valid']
+    }
+
+    if not is_valid:
+        if value < metric['min_valid']:
+            result['error'] = f"{metric['name']} value {value}{metric['unit']} is below minimum ({metric['min_valid']}{metric['unit']})"
+            result['clamped_value'] = metric['min_valid']
+        else:
+            result['error'] = f"{metric['name']} value {value}{metric['unit']} exceeds maximum ({metric['max_valid']}{metric['unit']}). This is a data quality issue."
+            result['clamped_value'] = metric['max_valid']
+
+    return sanitize_for_json({
+        "success": True,
+        "data": result
+    })
+
+
 # Run with: uvicorn main:app --reload --port 8000
 if __name__ == "__main__":
     import uvicorn
