@@ -55,12 +55,14 @@ export function SimulateView() {
           recommendedMitigations: ['Pre-cancel lowest-load flights', 'Pre-position spare aircraft', 'Call reserve crews'],
         });
       }
-    } catch {
+    } catch (error) {
+      console.error('Simulation failed:', error);
+      // Show demo data with clear indicator that API failed
       setResult({
         baseline: { completionFactor: 98.2, otp: 81, passengersDisrupted: 120, recoveryTime: 0, revenueImpact: 0, rasmImpact: 0 },
         scenario: { completionFactor: 94.1, otp: 62, passengersDisrupted: 2840, recoveryTime: 6.2, revenueImpact: -340000, rasmImpact: -0.08 },
         vulnerableFlights: [{ flight: 'NK234', route: 'ATL-MCO', time: '15:30', passengersAffected: 420 }],
-        recommendedMitigations: ['[Demo] Pre-cancel lowest-load flights', '[Demo] Pre-position spare aircraft'],
+        recommendedMitigations: ['(Demo) Pre-cancel lowest-load flights', '(Demo) Pre-position spare aircraft', '(Demo) Call reserve crews'],
       });
     } finally {
       setIsRunning(false);
@@ -68,7 +70,7 @@ export function SimulateView() {
   };
 
   return (
-    <div className="h-full overflow-auto p-4 bg-white">
+    <div className="h-full overflow-auto p-4 bg-white text-slate-900">
       <div className="max-w-5xl mx-auto">
         <div className="grid grid-cols-3 gap-4">
           {/* Scenario Builder */}
@@ -81,7 +83,7 @@ export function SimulateView() {
                 <button
                   key={t}
                   onClick={() => setScenarioType(t)}
-                  className={`px-3 py-1 text-sm rounded ${scenarioType === t ? 'bg-[#002855] text-white' : 'border border-slate-200'}`}
+                  className={`px-3 py-1 text-sm rounded ${scenarioType === t ? 'bg-[#002855] text-white' : 'border border-slate-200 text-slate-700'}`}
                 >
                   {t.charAt(0).toUpperCase() + t.slice(1)}
                 </button>

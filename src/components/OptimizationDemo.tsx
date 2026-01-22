@@ -30,10 +30,9 @@ export function OptimizationDemo() {
   useEffect(() => {
     async function loadRoutes() {
       try {
-        const routes = await api.getRoutes({ limit: 50 });
+        const routes = await api.getRoutes({ limit: 200 });
         const routesWithData = routes
           .filter(r => r.avg_load_factor && r.avg_fare)
-          .slice(0, 10)
           .map(r => ({
             route: `${r.origin}-${r.destination}`,
             fare: r.avg_fare || 100,
@@ -247,21 +246,23 @@ export function OptimizationDemo() {
   return (
     <div className="w-full max-w-5xl space-y-6">
       {/* Route Selector */}
-      <div className="flex gap-2 flex-wrap">
-        {availableRoutes.slice(0, 8).map((r) => (
-          <button
-            key={r.route}
-            onClick={() => setSelectedRoute(r.route)}
-            disabled={loading}
-            className={`px-4 py-2 rounded-lg font-medium transition-all ${
-              selectedRoute === r.route
-                ? 'bg-[#002855] text-white'
-                : 'bg-white border border-slate-200 text-slate-600 hover:border-slate-300'
-            } disabled:opacity-50`}
-          >
-            {r.route}
-          </button>
-        ))}
+      <div className="max-h-32 overflow-y-auto border border-slate-200 rounded-lg p-2 bg-white">
+        <div className="flex gap-2 flex-wrap">
+          {availableRoutes.map((r) => (
+            <button
+              key={r.route}
+              onClick={() => setSelectedRoute(r.route)}
+              disabled={loading}
+              className={`px-3 py-1.5 rounded font-medium text-sm transition-all ${
+                selectedRoute === r.route
+                  ? 'bg-[#002855] text-white'
+                  : 'bg-slate-100 border border-slate-200 text-slate-700 hover:border-slate-300'
+              } disabled:opacity-50`}
+            >
+              {r.route}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Header Card - McKinsey Navy */}

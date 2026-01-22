@@ -221,7 +221,7 @@ export default function Home() {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-slate-100">
+    <div className="flex flex-col h-screen bg-slate-100 text-slate-900">
       {/* Global Header (120px) */}
       <GlobalHeader
         onHubClick={handleHubClick}

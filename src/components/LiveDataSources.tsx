@@ -13,6 +13,8 @@ import {
   Activity
 } from 'lucide-react';
 
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-9693.up.railway.app';
+
 interface DataSource {
   id: string;
   name: string;
@@ -30,9 +32,9 @@ interface LiveDataSourcesProps {
 }
 
 const DATA_SOURCES_CONFIG = [
-  { id: 'schedules', name: 'Schedule Data', description: 'Flight schedules and routes', endpoint: '/api/schedules/routes' },
+  { id: 'schedules', name: 'Schedule Data', description: 'Flight schedules and routes', endpoint: '/api/network/routes' },
   { id: 'fleet', name: 'Fleet Data', description: 'Aircraft and maintenance status', endpoint: '/api/fleet/summary' },
-  { id: 'markets', name: 'Market Intelligence', description: 'Competitive fare and share data', endpoint: '/api/analysis/market-intel' },
+  { id: 'markets', name: 'Market Intelligence', description: 'Competitive fare and share data', endpoint: '/api/network/stats' },
   { id: 'optimizer', name: 'RASM Optimizer', description: 'ML optimization engine', endpoint: '/api/optimizer/status' },
   { id: 'crew', name: 'Crew Data', description: 'Crew assignments and pairings', endpoint: '/api/crew/summary' },
 ];
@@ -47,7 +49,7 @@ export function LiveDataSources({ compact = false, onRefresh }: LiveDataSourcesP
   const checkDataSource = async (config: typeof DATA_SOURCES_CONFIG[0]): Promise<DataSource> => {
     const startTime = Date.now();
     try {
-      const response = await fetch(config.endpoint, {
+      const response = await fetch(`${API_BASE}${config.endpoint}`, {
         method: 'GET',
         signal: AbortSignal.timeout(10000) // 10 second timeout
       });

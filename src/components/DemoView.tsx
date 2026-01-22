@@ -145,8 +145,9 @@ export function DemoView({ isLiveMode = false }: DemoViewProps) {
       let result: any = null;
       try {
         result = await api.getQuickRouteOptimization(origin, dest, 'A320neo', 2);
-      } catch {
-        // API failed, will use calculated values
+      } catch (err) {
+        console.error('Quick route optimization API failed:', err);
+        // API failed, will use calculated values below
       }
 
       // Get current state
@@ -262,7 +263,7 @@ export function DemoView({ isLiveMode = false }: DemoViewProps) {
   }
 
   return (
-    <div className="h-full bg-gradient-to-br from-slate-50 to-blue-50 overflow-auto">
+    <div className="h-full bg-gradient-to-br from-slate-50 to-blue-50 overflow-auto text-slate-900">
       <div className="max-w-6xl mx-auto p-8">
         {/* Hero */}
         <div className="text-center mb-12">
@@ -313,7 +314,7 @@ export function DemoView({ isLiveMode = false }: DemoViewProps) {
         </div>
 
         {/* Demo Content */}
-        <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
+        <div className="bg-white rounded-2xl shadow-xl overflow-hidden text-slate-900">
           {activeDemo === 'optimizer' && (
             <div className="p-8">
               <div className="flex items-center justify-between mb-6">

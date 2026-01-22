@@ -293,6 +293,12 @@ export function ControlRoom() {
                 All decisions reviewed
               </div>
             )}
+
+            {decisions.filter(d => d.status === 'pending').length > 6 && (
+              <div className="p-3 text-center text-sm text-slate-500 border-t border-slate-100 bg-slate-50">
+                +{decisions.filter(d => d.status === 'pending').length - 6} more decisions pending
+              </div>
+            )}
           </div>
         </div>
 

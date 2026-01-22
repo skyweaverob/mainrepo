@@ -27,7 +27,7 @@ export function OperationsView({ dataStatus }: OperationsViewProps) {
   ];
 
   return (
-    <div className="h-full flex flex-col bg-white">
+    <div className="h-full flex flex-col bg-white text-slate-900">
       {/* Simple tab bar */}
       <div className="border-b border-slate-200 px-4 flex gap-1">
         {tabs.map((tab) => {
