@@ -26,7 +26,7 @@ import { useLiveDataStore } from '@/lib/liveDataStore';
 const navigation = [
   { id: 'demo', name: 'Demo', icon: Presentation, desc: 'VC/Board View' },
   { id: 'controlroom', name: 'Control Room', icon: Target, desc: 'Decision OS' },
-  { id: 'tradeoffs', name: 'Optimize', icon: Cpu, desc: 'RASM Solver' },
+  { id: 'optimize', name: 'Optimize', icon: Cpu, desc: 'RASM Solver' },
   { id: 'operations', name: 'Operations', icon: Settings2, desc: 'Fleet • Crew • MRO' },
   { id: 'simulate', name: 'Simulate', icon: FlaskConical, desc: 'What-If Analysis' },
   { id: 'data', name: 'Data', icon: Database, desc: 'Data Health' },
@@ -54,6 +54,7 @@ export function Sidebar({ dataStatus }: SidebarProps) {
       intelligence: 'controlroom',
       crossdomain: 'controlroom',
       network: 'controlroom',
+      tradeoffs: 'optimize',
       booking: 'simulate',
       scenarios: 'simulate',
       analytics: 'simulate',
@@ -71,7 +72,7 @@ export function Sidebar({ dataStatus }: SidebarProps) {
     const statusMap: Record<string, boolean> = {
       demo: true, // Demo always has curated data
       controlroom: dataStatus.network_loaded,
-      tradeoffs: dataStatus.network_loaded,
+      optimize: dataStatus.network_loaded,
       operations: dataStatus.fleet_loaded && dataStatus.crew_loaded && dataStatus.mro_loaded,
       simulate: dataStatus.network_loaded,
       data: true, // Data health page always works

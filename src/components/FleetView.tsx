@@ -11,6 +11,25 @@ import * as api from '@/lib/api';
 
 const COLORS = ['#3b82f6', '#22c55e', '#f97316', '#8b5cf6', '#ec4899', '#06b6d4'];
 
+// Map ICAO aircraft type codes to common marketing names
+const AIRCRAFT_TYPE_NAMES: Record<string, string> = {
+  'A20N': 'A320neo',
+  'A21N': 'A321neo',
+  'A320': 'A320ceo',
+  'A321': 'A321ceo',
+  'A319': 'A319',
+  'A321X': 'A321XLR',
+  'B737': 'B737-800',
+  'B738': 'B737-800',
+  'B38M': 'B737 MAX 8',
+  'B39M': 'B737 MAX 9',
+};
+
+// Get display name for aircraft type
+const getAircraftDisplayName = (icaoCode: string): string => {
+  return AIRCRAFT_TYPE_NAMES[icaoCode] || icaoCode;
+};
+
 export function FleetView() {
   const [summary, setSummary] = useState<any>(null);
   const [aircraft, setAircraft] = useState<any[]>([]);
@@ -72,9 +91,9 @@ export function FleetView() {
     );
   }
 
-  // Prepare chart data
+  // Prepare chart data with human-readable aircraft type names
   const typeData = Object.entries(summary.by_type || {}).map(([name, count]) => ({
-    name,
+    name: getAircraftDisplayName(name),
     value: count as number,
   }));
 
@@ -215,7 +234,7 @@ export function FleetView() {
                         {item.aircraft_registration}
                       </span>
                       <span className="text-xs text-slate-500 ml-2">
-                        {item.aircraft_type}
+                        {getAircraftDisplayName(item.aircraft_type)}
                       </span>
                     </div>
                     <span className="text-xs text-orange-400">
@@ -260,8 +279,12 @@ export function FleetView() {
                 {aircraft.slice(0, 20).map((ac) => (
                   <tr key={ac.aircraft_registration} className="hover:bg-slate-800/50">
                     <td className="px-4 py-3 font-mono text-slate-100">{ac.aircraft_registration}</td>
-                    <td className="px-4 py-3 text-slate-300">{ac.aircraft_type}</td>
-                    <td className="px-4 py-3 text-slate-300">{ac.home_base}</td>
+                    <td className="px-4 py-3 text-slate-300">
+                      {getAircraftDisplayName(ac.aircraft_type) || <span className="text-slate-500">-</span>}
+                    </td>
+                    <td className="px-4 py-3 text-slate-300">
+                      {ac.home_base || <span className="text-slate-500">-</span>}
+                    </td>
                     <td className="px-4 py-3">
                       <span className={`px-2 py-0.5 rounded text-xs ${
                         ac.current_status === 'ACTIVE' ? 'bg-green-900/50 text-green-300' :

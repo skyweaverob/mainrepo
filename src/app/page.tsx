@@ -18,6 +18,7 @@ import { CrossDomainInsights } from '@/components/CrossDomainInsights';
 import { ControlRoom } from '@/components/os/ControlRoom';
 import { DemoView } from '@/components/DemoView';
 import { DataView } from '@/components/DataView';
+import { OptimizePage } from '@/components/OptimizePage';
 import { SimulateView } from '@/components/SimulateView';
 import { useAppStore } from '@/lib/store';
 import { useLiveDataStore } from '@/lib/liveDataStore';
@@ -105,6 +106,10 @@ export default function Home() {
       // OS-style Control Room - Primary Decision Interface
       case 'controlroom':
         return <ControlRoom />;
+
+      // Optimize - RASM Optimizer with hub selection and domain breakdowns
+      case 'optimize':
+        return <OptimizePage />;
 
       // Simulate - What-if scenario analysis
       case 'simulate':
