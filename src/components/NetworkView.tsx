@@ -262,17 +262,17 @@ export function NetworkView({ initialData, onHubClick }: NetworkViewProps) {
       </div>
 
       {/* Map + Table Layout */}
-      <div className="flex-1 flex min-h-0 px-6 pb-6 pt-4 gap-6 overflow-hidden">
+      <div className="flex-1 flex min-h-0 px-6 pb-6 pt-4 gap-6 overflow-auto">
         {/* Left: Map + Alerts (when no route selected) */}
         {!selectedRoute && (
-          <div className="w-2/5 flex flex-col gap-4 min-h-0">
+          <div className="w-2/5 flex flex-col gap-4">
             {/* Network Map */}
-            <div className="flex-1 min-h-0 bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
+            <div className="h-[350px] bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
               <NetworkMap
                 hubs={hubMapData}
                 selectedHub={selectedHub}
                 onHubClick={onHubClick}
-                height={300}
+                height={350}
               />
             </div>
 

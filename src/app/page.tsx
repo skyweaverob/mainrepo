@@ -100,8 +100,10 @@ export default function Home() {
 
       case 'tradeoffs':
         return (
-          <div className="h-full overflow-auto p-6 bg-slate-100 flex items-center justify-center">
-            <OptimizationDemo />
+          <div className="h-full overflow-auto p-6 bg-slate-100">
+            <div className="flex justify-center">
+              <OptimizationDemo />
+            </div>
           </div>
         );
 
@@ -207,7 +209,7 @@ export default function Home() {
       {/* Main content area below header */}
       <div className="flex flex-1 pt-[120px] overflow-hidden">
         <Sidebar dataStatus={dataStatus} />
-        <main className="flex-1 overflow-hidden bg-slate-100">
+        <main className="flex-1 overflow-auto bg-slate-100">
           {renderView()}
         </main>
       </div>
