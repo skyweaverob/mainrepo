@@ -72,6 +72,28 @@ from network_intelligence import (
     BookingCurveAnalyzer
 )
 
+# Import optimization engines
+try:
+    from rasm_optimizer import (
+        quick_rasm_analysis,
+        optimize_network,
+        calculate_stage_length_casm,
+        AIRCRAFT_SPECS,
+        Route,
+        Aircraft,
+        CrewBase
+    )
+    from ai_optimizer import (
+        AIOptimizer,
+        ai_optimize_route,
+        get_ai_score,
+        ScenarioSimulator
+    )
+    OPTIMIZER_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Optimization modules not available: {e}")
+    OPTIMIZER_AVAILABLE = False
+
 
 # Initialize FastAPI app with NaN-safe JSON response
 app = FastAPI(
@@ -1359,6 +1381,558 @@ async def get_route_pnl(origin: str, destination: str):
     }
 
     return pnl
+
+
+# ==================== RASM Optimization Engine ====================
+
+class RouteOptimizationRequest(BaseModel):
+    """Request for route optimization."""
+    origin: str
+    destination: str
+    distance_nm: float = 500
+    current_equipment: str = "A320neo"
+    current_frequency: int = 2
+    current_fare: float = 120
+    daily_demand: float = 250
+    segment_mix: Optional[Dict[str, float]] = None
+
+
+class NetworkOptimizationRequest(BaseModel):
+    """Request for network optimization."""
+    objective: str = "profit"  # 'rasm', 'profit', 'revenue'
+
+
+@app.get("/api/optimizer/status")
+async def get_optimizer_status():
+    """Check if optimization engine is available."""
+    return {
+        "optimizer_available": OPTIMIZER_AVAILABLE,
+        "features": {
+            "mathematical_optimization": OPTIMIZER_AVAILABLE,
+            "ai_scoring": OPTIMIZER_AVAILABLE,
+            "demand_forecasting": OPTIMIZER_AVAILABLE,
+            "scenario_simulation": OPTIMIZER_AVAILABLE
+        },
+        "solver": "PuLP CBC (open source)" if OPTIMIZER_AVAILABLE else None
+    }
+
+
+@app.post("/api/optimizer/route")
+async def optimize_route(request: RouteOptimizationRequest):
+    """
+    AI-enhanced route optimization.
+
+    Returns equipment swap options, demand forecast, price elasticity,
+    and AI recommendations.
+    """
+    if not OPTIMIZER_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Optimization engine not available")
+
+    try:
+        result = ai_optimize_route(
+            origin=request.origin.upper(),
+            destination=request.destination.upper(),
+            distance_nm=request.distance_nm,
+            current_equipment=request.current_equipment,
+            current_frequency=request.current_frequency,
+            current_fare=request.current_fare,
+            daily_demand=request.daily_demand,
+            segment_mix=request.segment_mix
+        )
+        return sanitize_for_json(result)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/optimizer/route/{origin}/{destination}")
+async def get_route_optimization(
+    origin: str,
+    destination: str,
+    equipment: str = "A320neo",
+    frequency: int = 2,
+    use_live_fares: bool = False,
+    departure_date: Optional[str] = None
+):
+    """
+    Quick route RASM analysis.
+
+    Uses market data if available, enriched with live fares when requested.
+    """
+    if not OPTIMIZER_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Optimization engine not available")
+
+    # Try to get market data
+    distance_nm = 500  # default
+    daily_demand = 200
+    avg_fare = 120
+    live_fare_data = None
+
+    if data_store['network_intelligence']:
+        market_key = '_'.join(sorted([origin.upper(), destination.upper()]))
+        markets = data_store['network_intelligence'].get_market_competitive_position()
+        mi = markets.get(market_key)
+        if mi:
+            distance_nm = mi.distance * 0.868976  # Convert statute to nautical miles
+            daily_demand = mi.nk_passengers / 365 if mi.nk_passengers > 0 else 200
+            avg_fare = mi.nk_avg_fare if mi.nk_avg_fare > 0 else 120
+
+    # Fetch live fares from SerpAPI if requested
+    if use_live_fares and departure_date:
+        try:
+            service = get_external_service()
+            live_result = await service.serp.get_competitive_fares(
+                origin.upper(), destination.upper(), departure_date
+            )
+            if live_result.get('success') and live_result.get('min_fare'):
+                live_fare_data = live_result
+                # Use live fare as current market fare
+                avg_fare = live_result['min_fare']
+        except Exception as e:
+            live_fare_data = {'error': str(e)}
+
+    try:
+        result = quick_rasm_analysis(
+            origin=origin.upper(),
+            destination=destination.upper(),
+            distance_nm=distance_nm,
+            daily_demand=daily_demand,
+            avg_fare=avg_fare,
+            current_equipment=equipment,
+            current_frequency=frequency
+        )
+
+        # Enrich result with live fare data
+        if live_fare_data:
+            result['live_fares'] = live_fare_data
+
+        # Add data source transparency
+        result['data_sources'] = {
+            'fare_source': 'live_serpapi' if (use_live_fares and live_fare_data and live_fare_data.get('success')) else 'network_intelligence',
+            'demand_source': 'network_intelligence' if data_store['network_intelligence'] else 'default_estimate',
+            'distance_source': 'network_intelligence' if data_store['network_intelligence'] else 'default_estimate'
+        }
+
+        return sanitize_for_json(result)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/optimizer/casm/{distance_nm}")
+async def get_stage_length_casm(distance_nm: float):
+    """
+    Calculate stage-length adjusted CASM.
+
+    Shorter flights have higher unit costs due to fixed costs
+    spread over fewer ASMs.
+    """
+    if not OPTIMIZER_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Optimization engine not available")
+
+    casm = calculate_stage_length_casm(distance_nm)
+    base_casm = 8.0
+
+    return {
+        "distance_nm": distance_nm,
+        "casm_cents": round(casm, 2),
+        "base_casm_cents": base_casm,
+        "stage_length_premium_pct": round((casm / base_casm - 1) * 100, 1),
+        "explanation": f"At {distance_nm}nm, CASM is {round(casm, 2)}¢ vs base of {base_casm}¢"
+    }
+
+
+@app.get("/api/optimizer/equipment")
+async def get_equipment_specs():
+    """Get aircraft specifications for optimization."""
+    if not OPTIMIZER_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Optimization engine not available")
+
+    return AIRCRAFT_SPECS
+
+
+@app.get("/api/optimizer/ai-score/{origin}/{destination}")
+async def get_ai_route_score(
+    origin: str,
+    destination: str,
+    daily_demand: float = 200,
+    avg_fare: float = 120,
+    competitors: int = 2
+):
+    """
+    Get AI-powered route score.
+
+    Scores route on RASM potential, strategic fit, risk, and growth.
+    """
+    if not OPTIMIZER_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Optimization engine not available")
+
+    # Try to get real market data
+    distance_nm = 500
+    if data_store['network_intelligence']:
+        market_key = '_'.join(sorted([origin.upper(), destination.upper()]))
+        markets = data_store['network_intelligence'].get_market_competitive_position()
+        mi = markets.get(market_key)
+        if mi:
+            distance_nm = mi.distance * 0.868976
+            if mi.nk_passengers > 0:
+                daily_demand = mi.nk_passengers / 365
+            if mi.nk_avg_fare > 0:
+                avg_fare = mi.nk_avg_fare
+
+    try:
+        result = get_ai_score(
+            origin=origin.upper(),
+            destination=destination.upper(),
+            distance_nm=distance_nm,
+            daily_demand=daily_demand,
+            avg_fare=avg_fare,
+            competitors=competitors
+        )
+        return sanitize_for_json(result)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/optimizer/network")
+async def run_network_optimization(request: NetworkOptimizationRequest):
+    """
+    Full network optimization with AI enhancements.
+
+    Optimizes fleet assignment and frequency across all routes.
+    """
+    if not OPTIMIZER_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Optimization engine not available")
+
+    # Build routes from available data
+    routes = []
+    if data_store['network_intelligence']:
+        markets = data_store['network_intelligence'].get_market_competitive_position()
+        for market_key, mi in markets.items():
+            if mi.nk_passengers > 0:
+                airports = market_key.split('_')
+                if len(airports) == 2:
+                    routes.append({
+                        'origin': airports[0],
+                        'destination': airports[1],
+                        'distance_nm': mi.distance * 0.868976,
+                        'daily_demand': mi.nk_passengers / 365,
+                        'avg_fare': mi.nk_avg_fare if mi.nk_avg_fare > 0 else 100
+                    })
+
+    if not routes:
+        # Use sample routes for demo
+        routes = [
+            {'origin': 'DTW', 'destination': 'MCO', 'distance_nm': 960, 'daily_demand': 350, 'avg_fare': 120},
+            {'origin': 'DTW', 'destination': 'FLL', 'distance_nm': 1020, 'daily_demand': 280, 'avg_fare': 130},
+            {'origin': 'DTW', 'destination': 'LAS', 'distance_nm': 1750, 'daily_demand': 200, 'avg_fare': 150},
+            {'origin': 'EWR', 'destination': 'MCO', 'distance_nm': 850, 'daily_demand': 400, 'avg_fare': 110},
+            {'origin': 'EWR', 'destination': 'FLL', 'distance_nm': 950, 'daily_demand': 320, 'avg_fare': 115},
+        ]
+
+    # Build fleet from available data, considering MRO schedule
+    fleet = []
+    # Get aircraft in maintenance from MRO data
+    aircraft_in_maintenance = set()
+    if data_store['mro'] is not None:
+        mro_df = data_store['mro']
+        if 'scheduled_start_date' in mro_df.columns and 'scheduled_end_date' in mro_df.columns:
+            mro_df['start'] = pd.to_datetime(mro_df['scheduled_start_date'], errors='coerce')
+            mro_df['end'] = pd.to_datetime(mro_df['scheduled_end_date'], errors='coerce')
+            now = pd.Timestamp.now()
+            # Find aircraft currently in maintenance
+            in_mx = mro_df[(mro_df['start'] <= now) & (mro_df['end'] >= now)]
+            if 'aircraft_registration' in in_mx.columns:
+                aircraft_in_maintenance = set(in_mx['aircraft_registration'].dropna().str.upper())
+
+    if data_store['fleet'] is not None:
+        for _, row in data_store['fleet'].iterrows():
+            reg = str(row.get('aircraft_registration', row.get('Aircraft Registration', f'N{len(fleet)+1:03d}NK')))
+            # Check both fleet status and MRO schedule
+            status = row.get('current_status', row.get('Current Status', 'Active'))
+            is_active = str(status).upper() in ['ACTIVE', 'FLYING', 'AVAILABLE']
+            not_in_mx = reg.upper() not in aircraft_in_maintenance
+            fleet.append({
+                'registration': reg,
+                'aircraft_type': str(row.get('aircraft_type', row.get('Aircraft Type', 'A320neo'))),
+                'home_base': str(row.get('home_base', row.get('Home Base', 'DTW'))),
+                'available': is_active and not_in_mx
+            })
+
+    if not fleet:
+        # Use sample fleet for demo
+        fleet = [
+            {'registration': 'N901NK', 'aircraft_type': 'A320neo', 'home_base': 'DTW', 'available': True},
+            {'registration': 'N902NK', 'aircraft_type': 'A320neo', 'home_base': 'DTW', 'available': True},
+            {'registration': 'N903NK', 'aircraft_type': 'A321neo', 'home_base': 'DTW', 'available': True},
+            {'registration': 'N904NK', 'aircraft_type': 'A320neo', 'home_base': 'EWR', 'available': True},
+            {'registration': 'N905NK', 'aircraft_type': 'A319', 'home_base': 'EWR', 'available': True},
+        ]
+
+    # Build crew bases from actual crew data
+    crew = []
+    if data_store['crew'] is not None:
+        crew_df = data_store['crew']
+        if 'home_base' in crew_df.columns and 'crew_type' in crew_df.columns:
+            # Aggregate crew by base and type
+            crew_counts = crew_df.groupby(['home_base', 'crew_type']).size().unstack(fill_value=0)
+            for base in crew_counts.index:
+                pilots = int(crew_counts.loc[base].get('PILOT', crew_counts.loc[base].get('pilot', 0)))
+                fas = int(crew_counts.loc[base].get('FA', crew_counts.loc[base].get('fa', 0)))
+                if pilots > 0 or fas > 0:
+                    crew.append({
+                        'base': str(base),
+                        'pilots': pilots,
+                        'fas': fas
+                    })
+
+    if not crew:
+        # Fallback to sample crew for demo only if no real data
+        crew = [
+            {'base': 'DTW', 'pilots': 80, 'fas': 200},
+            {'base': 'MCO', 'pilots': 60, 'fas': 150},
+            {'base': 'FLL', 'pilots': 50, 'fas': 120},
+            {'base': 'LAS', 'pilots': 40, 'fas': 100},
+            {'base': 'EWR', 'pilots': 60, 'fas': 140},
+        ]
+
+    try:
+        ai_optimizer = AIOptimizer()
+        result = ai_optimizer.optimize_network(
+            routes=routes,
+            fleet=fleet,
+            crew=crew,
+            objective=request.objective
+        )
+
+        # Add data source audit trail
+        result['data_sources_used'] = {
+            'routes': {
+                'source': 'network_intelligence' if data_store['network_intelligence'] and routes else 'sample_demo_data',
+                'count': len(routes)
+            },
+            'fleet': {
+                'source': 'fleet_csv' if data_store['fleet'] is not None else 'sample_demo_data',
+                'count': len(fleet),
+                'available_aircraft': sum(1 for f in fleet if f.get('available', True)),
+                'mro_excluded': len(aircraft_in_maintenance) if 'aircraft_in_maintenance' in dir() else 0
+            },
+            'crew': {
+                'source': 'crew_csv' if data_store['crew'] is not None else 'sample_demo_data',
+                'bases': len(crew),
+                'total_pilots': sum(c.get('pilots', 0) for c in crew),
+                'total_fas': sum(c.get('fas', 0) for c in crew)
+            },
+            'mro_integration': data_store['mro'] is not None
+        }
+
+        return sanitize_for_json(result)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/optimizer/scenario/equipment-swap")
+async def simulate_equipment_swap(
+    origin: str,
+    destination: str,
+    from_equipment: str = "A320neo",
+    to_equipment: str = "A321neo",
+    frequency_change: int = 0
+):
+    """
+    Simulate equipment swap scenario.
+
+    Returns before/after comparison with RASM impact.
+    """
+    if not OPTIMIZER_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Optimization engine not available")
+
+    # Get route data
+    distance_nm = 500
+    daily_demand = 200
+    avg_fare = 120
+
+    if data_store['network_intelligence']:
+        market_key = '_'.join(sorted([origin.upper(), destination.upper()]))
+        markets = data_store['network_intelligence'].get_market_competitive_position()
+        mi = markets.get(market_key)
+        if mi:
+            distance_nm = mi.distance * 0.868976
+            daily_demand = mi.nk_passengers / 365 if mi.nk_passengers > 0 else 200
+            avg_fare = mi.nk_avg_fare if mi.nk_avg_fare > 0 else 120
+
+    try:
+        route = Route(
+            origin=origin.upper(),
+            destination=destination.upper(),
+            distance_nm=distance_nm,
+            daily_demand=daily_demand,
+            avg_fare=avg_fare
+        )
+
+        simulator = ScenarioSimulator()
+        result = simulator.simulate_equipment_change(
+            route=route,
+            from_equipment=from_equipment,
+            to_equipment=to_equipment,
+            frequency_change=frequency_change
+        )
+        return sanitize_for_json(result)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== Data Audit Endpoint ====================
+
+@app.get("/api/optimizer/data-audit")
+async def get_optimizer_data_audit():
+    """
+    Comprehensive audit of all data sources feeding the optimizer.
+
+    Microsoft-style debug: Shows exactly what data is connected.
+    """
+    audit = {
+        'timestamp': datetime.now().isoformat(),
+        'optimizer_available': OPTIMIZER_AVAILABLE,
+        'data_sources': {},
+        'connections': {},
+        'gaps': [],
+        'recommendations': []
+    }
+
+    # 1. Fleet Data Audit
+    if data_store['fleet'] is not None:
+        fleet_df = data_store['fleet']
+        audit['data_sources']['fleet'] = {
+            'status': 'CONNECTED',
+            'rows': len(fleet_df),
+            'columns': list(fleet_df.columns),
+            'by_type': fleet_df['aircraft_type'].value_counts().to_dict() if 'aircraft_type' in fleet_df.columns else {},
+            'by_base': fleet_df['home_base'].value_counts().to_dict() if 'home_base' in fleet_df.columns else {},
+            'optimizer_uses': True
+        }
+    else:
+        audit['data_sources']['fleet'] = {'status': 'NOT_LOADED', 'optimizer_uses': False}
+        audit['gaps'].append('Fleet data not loaded - using demo data')
+
+    # 2. Crew Data Audit
+    if data_store['crew'] is not None:
+        crew_df = data_store['crew']
+        audit['data_sources']['crew'] = {
+            'status': 'CONNECTED',
+            'rows': len(crew_df),
+            'columns': list(crew_df.columns),
+            'by_type': crew_df['crew_type'].value_counts().to_dict() if 'crew_type' in crew_df.columns else {},
+            'by_base': crew_df['home_base'].value_counts().to_dict() if 'home_base' in crew_df.columns else {},
+            'optimizer_uses': True
+        }
+    else:
+        audit['data_sources']['crew'] = {'status': 'NOT_LOADED', 'optimizer_uses': False}
+        audit['gaps'].append('Crew data not loaded - using demo data')
+
+    # 3. MRO Data Audit
+    if data_store['mro'] is not None:
+        mro_df = data_store['mro']
+        # Check for currently in-maintenance aircraft
+        in_mx_count = 0
+        if 'scheduled_start_date' in mro_df.columns and 'scheduled_end_date' in mro_df.columns:
+            mro_df_check = mro_df.copy()
+            mro_df_check['start'] = pd.to_datetime(mro_df_check['scheduled_start_date'], errors='coerce')
+            mro_df_check['end'] = pd.to_datetime(mro_df_check['scheduled_end_date'], errors='coerce')
+            now = pd.Timestamp.now()
+            in_mx_count = len(mro_df_check[(mro_df_check['start'] <= now) & (mro_df_check['end'] >= now)])
+
+        audit['data_sources']['mro'] = {
+            'status': 'CONNECTED',
+            'rows': len(mro_df),
+            'columns': list(mro_df.columns),
+            'by_type': mro_df['maintenance_type'].value_counts().to_dict() if 'maintenance_type' in mro_df.columns else {},
+            'aircraft_currently_in_mx': in_mx_count,
+            'optimizer_uses': True,
+            'integration': 'Reduces available fleet count'
+        }
+    else:
+        audit['data_sources']['mro'] = {'status': 'NOT_LOADED', 'optimizer_uses': False}
+        audit['gaps'].append('MRO data not loaded - all aircraft treated as available')
+
+    # 4. Network Intelligence Audit
+    if data_store['network_intelligence'] is not None:
+        ni = data_store['network_intelligence']
+        markets = ni.get_market_competitive_position()
+        audit['data_sources']['network_intelligence'] = {
+            'status': 'CONNECTED',
+            'markets_loaded': len(markets),
+            'data_files': {
+                't100_loaded': ni.t100_df is not None,
+                'db1b_loaded': ni.db1b_df is not None,
+                'nk_routes_loaded': ni.nk_routes_df is not None,
+                'f9_routes_loaded': ni.f9_routes_df is not None,
+                'scraped_fares_loaded': ni.scraped_fares_df is not None
+            },
+            'optimizer_uses': True,
+            'provides': ['distances', 'demand_estimates', 'historical_fares', 'competitor_data']
+        }
+    else:
+        audit['data_sources']['network_intelligence'] = {'status': 'NOT_LOADED', 'optimizer_uses': False}
+        audit['gaps'].append('Network intelligence not loaded - using default estimates')
+
+    # 5. Live Data Services Audit
+    try:
+        service = get_external_service()
+        audit['data_sources']['live_services'] = {
+            'serpapi_fares': {
+                'status': 'AVAILABLE' if service.serp.api_key else 'NO_API_KEY',
+                'optimizer_uses': True,
+                'how_to_use': 'Add ?use_live_fares=true&departure_date=YYYY-MM-DD to /api/optimizer/route/{o}/{d}'
+            },
+            'airlabs_schedules': {
+                'status': 'AVAILABLE' if service.airlabs.api_key else 'NO_API_KEY',
+                'optimizer_uses': False,
+                'available_at': '/api/live/schedules/{origin}'
+            },
+            'google_events': {
+                'status': 'AVAILABLE' if service.events.api_key else 'NO_API_KEY',
+                'optimizer_uses': False,
+                'available_at': '/api/live/events/{airport_code}'
+            },
+            'google_trends': {
+                'status': 'AVAILABLE' if service.trends.api_key else 'NO_API_KEY',
+                'optimizer_uses': False,
+                'available_at': '/api/trends/route/{origin}/{destination}'
+            },
+            'weather': {
+                'status': 'AVAILABLE' if service.weather.api_key else 'NO_API_KEY',
+                'optimizer_uses': False,
+                'available_at': '/api/live/weather/{airport}'
+            }
+        }
+    except Exception as e:
+        audit['data_sources']['live_services'] = {'status': 'ERROR', 'error': str(e)}
+
+    # 6. Cross-Domain Intelligence Audit
+    if data_store['cross_domain'] is not None:
+        cd = data_store['cross_domain']
+        audit['data_sources']['cross_domain_intelligence'] = {
+            'status': 'CONNECTED',
+            'fleet_linked': cd.fleet_df is not None,
+            'crew_linked': cd.crew_df is not None,
+            'mro_linked': cd.mro_df is not None,
+            'provides': ['fleet_alignment', 'crew_alignment', 'mro_impact', 'equipment_recommendations']
+        }
+    else:
+        audit['data_sources']['cross_domain_intelligence'] = {'status': 'NOT_INITIALIZED'}
+
+    # Generate recommendations
+    if not audit['gaps']:
+        audit['recommendations'].append('All primary data sources connected - optimizer fully operational')
+    else:
+        audit['recommendations'].append(f'Upload missing data files to fully enable optimization: {audit["gaps"]}')
+
+    live_svcs = audit['data_sources'].get('live_services', {})
+    if live_svcs.get('serpapi_fares', {}).get('status') == 'NO_API_KEY':
+        audit['recommendations'].append('Add SERP_API_KEY to .env for real-time Google Flights fare integration')
+    if live_svcs.get('google_events', {}).get('status') == 'NO_API_KEY':
+        audit['recommendations'].append('Add SEARCHAPI_KEY to .env for event-driven demand signals')
+
+    return sanitize_for_json(audit)
 
 
 # Run with: uvicorn main:app --reload --port 8000

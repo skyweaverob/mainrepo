@@ -664,3 +664,233 @@ export const getRoutePnL = getRoutePnl;
 export async function getMarketIntelligenceDetail(marketKey: string) {
   return getSingleMarketIntelligence(marketKey).catch(() => null);
 }
+
+// ==================== RASM Optimization Engine ====================
+
+export interface OptimizerStatus {
+  optimizer_available: boolean;
+  features: {
+    mathematical_optimization: boolean;
+    ai_scoring: boolean;
+    demand_forecasting: boolean;
+    scenario_simulation: boolean;
+  };
+  solver: string | null;
+}
+
+export interface EquipmentOption {
+  option: string;
+  equipment: string;
+  frequency: number;
+  seats: number;
+  daily_capacity: number;
+  expected_pax: number;
+  load_factor: number;
+  revenue: number;
+  cost: number;
+  profit: number;
+  rasm_cents: number;
+  asm: number;
+  delta_profit: number;
+  delta_rasm: number;
+  recommendation: string;
+}
+
+export interface AIRouteScore {
+  route: string;
+  overall_score: number;
+  scores: {
+    rasm_score: number;
+    strategic_score: number;
+    risk_score: number;
+    growth_score: number;
+  };
+  recommendation: string;
+  key_factors: string[];
+}
+
+export interface RouteOptimizationResult {
+  route: string;
+  distance_nm: number;
+  stage_length_casm_cents: number;
+  current_state: {
+    equipment: string;
+    frequency: number;
+    fare: number;
+    daily_demand: number;
+    segment_mix: Record<string, number>;
+  };
+  equipment_analysis: {
+    options: EquipmentOption[];
+    recommended: EquipmentOption;
+    rasm_improvement_cents: number;
+  };
+  demand_forecast: {
+    predicted_demand: number;
+    confidence_interval: [number, number];
+    confidence_level: string;
+    model_used: string;
+  };
+  price_elasticity: {
+    elasticity: number;
+    interpretation: string;
+    pricing_recommendation: {
+      action: string;
+      suggested_change_pct: number;
+      expected_revenue_change_pct: number;
+    };
+  };
+  ai_route_score: AIRouteScore;
+  recommendations: Array<{
+    priority: number;
+    category: string;
+    action: string;
+    impact: string;
+    confidence: string;
+  }>;
+  optimization_summary: {
+    potential_profit_increase: number;
+    potential_rasm_increase: number;
+    confidence: string;
+  };
+}
+
+export interface ScenarioResult {
+  scenario: string;
+  frequency_change: number;
+  before: {
+    equipment: string;
+    frequency: number;
+    asm: number;
+    revenue: number;
+    cost: number;
+    profit: number;
+    rasm_cents: number;
+  };
+  after: {
+    equipment: string;
+    frequency: number;
+    asm: number;
+    revenue: number;
+    cost: number;
+    profit: number;
+    rasm_cents: number;
+  };
+  impact: {
+    delta_profit: number;
+    delta_rasm: number;
+    delta_capacity_pct: number;
+  };
+}
+
+export async function getOptimizerStatus(): Promise<OptimizerStatus> {
+  return fetchAPI<OptimizerStatus>('/api/optimizer/status');
+}
+
+export async function optimizeRoute(params: {
+  origin: string;
+  destination: string;
+  distance_nm?: number;
+  current_equipment?: string;
+  current_frequency?: number;
+  current_fare?: number;
+  daily_demand?: number;
+  segment_mix?: Record<string, number>;
+}): Promise<RouteOptimizationResult> {
+  return fetchAPI<RouteOptimizationResult>('/api/optimizer/route', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  });
+}
+
+export async function getQuickRouteOptimization(
+  origin: string,
+  destination: string,
+  equipment: string = 'A320neo',
+  frequency: number = 2
+) {
+  return fetchAPI<{
+    route: string;
+    distance_nm: number;
+    stage_length_casm: number;
+    current: EquipmentOption | null;
+    options: EquipmentOption[];
+    recommended: EquipmentOption;
+    rasm_improvement_potential: number;
+  }>(`/api/optimizer/route/${origin}/${destination}?equipment=${equipment}&frequency=${frequency}`);
+}
+
+export async function getStageLengthCasm(distance_nm: number) {
+  return fetchAPI<{
+    distance_nm: number;
+    casm_cents: number;
+    base_casm_cents: number;
+    stage_length_premium_pct: number;
+    explanation: string;
+  }>(`/api/optimizer/casm/${distance_nm}`);
+}
+
+export async function getEquipmentSpecs() {
+  return fetchAPI<Record<string, {
+    seats: number;
+    range_nm: number;
+    fuel_burn_per_hour: number;
+    hourly_cost: number;
+    crew_required: { pilots: number; fas: number };
+  }>>('/api/optimizer/equipment');
+}
+
+export async function getAIRouteScore(
+  origin: string,
+  destination: string,
+  daily_demand: number = 200,
+  avg_fare: number = 120,
+  competitors: number = 2
+): Promise<AIRouteScore> {
+  return fetchAPI<AIRouteScore>(
+    `/api/optimizer/ai-score/${origin}/${destination}?daily_demand=${daily_demand}&avg_fare=${avg_fare}&competitors=${competitors}`
+  );
+}
+
+export async function runNetworkOptimization(objective: string = 'profit') {
+  return fetchAPI<{
+    optimization_result: {
+      status: string;
+      objective_value: number;
+      total_revenue: number;
+      total_asm: number;
+      total_cost: number;
+      solve_time: number;
+    };
+    route_scores: AIRouteScore[];
+    decisions: {
+      frequencies: Record<string, { total: number; by_equipment: Record<string, number> }>;
+    };
+    ai_recommendations: Array<{
+      type: string;
+      title: string;
+      metrics?: Record<string, number>;
+      routes?: Array<{ route: string; rasm: number; frequency: number }>;
+    }>;
+    network_health: {
+      avg_route_score: number;
+      routes_at_risk: number;
+      high_performers: number;
+    };
+  }>('/api/optimizer/network', {
+    method: 'POST',
+    body: JSON.stringify({ objective }),
+  });
+}
+
+export async function simulateEquipmentSwap(
+  origin: string,
+  destination: string,
+  from_equipment: string = 'A320neo',
+  to_equipment: string = 'A321neo',
+  frequency_change: number = 0
+): Promise<ScenarioResult> {
+  return fetchAPI<ScenarioResult>(
+    `/api/optimizer/scenario/equipment-swap?origin=${origin}&destination=${destination}&from_equipment=${from_equipment}&to_equipment=${to_equipment}&frequency_change=${frequency_change}`
+  );
+}
