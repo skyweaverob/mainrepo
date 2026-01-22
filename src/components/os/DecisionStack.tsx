@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Layers, DollarSign, ChevronRight, Filter, SortDesc } from 'lucide-react';
+import { Layers, ChevronRight, Filter } from 'lucide-react';
 import { DecisionTile, DecisionStatus, DecisionPriority, DecisionCategory } from './DecisionTile';
 import { formatCurrency } from '@/lib/formatters';
 

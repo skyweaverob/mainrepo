@@ -6,7 +6,6 @@ import {
   CheckCircle2,
   XCircle,
   Play,
-  Pause,
   Clock,
   User,
   AlertTriangle,

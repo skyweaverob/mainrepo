@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useMemo, useCallback } from 'react';
-import { AlertTriangle, RefreshCw, Zap, Target } from 'lucide-react';
+import { RefreshCw, Zap, Target } from 'lucide-react';
 import { RASMControlPanel } from './RASMControlPanel';
 import { DecisionHorizon, HorizonType } from './DecisionHorizon';
 import { DecisionStack, Decision } from './DecisionStack';
@@ -9,7 +9,7 @@ import { ConstraintBar } from './ConstraintChip';
 import { DecisionLog } from './DecisionLog';
 import { NetworkMap } from '../NetworkMap';
 import * as api from '@/lib/api';
-import { formatCurrency, formatRASM } from '@/lib/formatters';
+import { formatCurrency } from '@/lib/formatters';
 
 interface ControlRoomProps {
   onHubClick?: (hubCode: string) => void;

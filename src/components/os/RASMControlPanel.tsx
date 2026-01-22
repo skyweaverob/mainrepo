@@ -27,12 +27,15 @@ export function RASMControlPanel({
   floorRASM,
   ceilingRASM,
   onTargetChange,
-  onFloorChange,
-  onCeilingChange,
+  onFloorChange: _onFloorChange,
+  onCeilingChange: _onCeilingChange,
   isLocked = false,
   onLockToggle,
   dailyRevenueImpact,
 }: RASMControlPanelProps) {
+  // Floor/ceiling changes reserved for future implementation
+  void _onFloorChange;
+  void _onCeilingChange;
   const [isEditing, setIsEditing] = useState(false);
   const [editTarget, setEditTarget] = useState(targetRASM);
 

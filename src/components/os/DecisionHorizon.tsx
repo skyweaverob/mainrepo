@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import { Clock, Calendar, CalendarDays, CalendarRange } from 'lucide-react';
 
 export type HorizonType = 'T0_T7' | 'T7_T30' | 'T30_T120' | 'SEASONAL';

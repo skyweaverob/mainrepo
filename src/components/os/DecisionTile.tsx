@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import {
-  DollarSign,
   ArrowRight,
   AlertTriangle,
   CheckCircle2,
@@ -11,10 +10,8 @@ import {
   ChevronDown,
   ChevronUp,
   Play,
-  Pause,
-  RotateCcw,
 } from 'lucide-react';
-import { formatCurrency, formatRASM } from '@/lib/formatters';
+import { formatCurrency } from '@/lib/formatters';
 
 export type DecisionStatus = 'proposed' | 'simulated' | 'approved' | 'executing' | 'completed' | 'rejected';
 export type DecisionPriority = 'critical' | 'high' | 'medium' | 'low';
