@@ -112,24 +112,13 @@ export function OptimizePage() {
       const [origin, destination] = selectedRoute.split('-');
       const avgFare = currentRoute.avg_fare || 140;
 
-      // Calculate daily demand: use unconstrained demand (10% above capacity at current load factor)
-      // This represents spill potential that optimization can capture
-      const loadFactor = currentRoute.avg_load_factor || 0.85;
-      const seatsPerFlight = 182; // A320neo
-      const dailyFrequency = 2;
-      const dailyCapacity = seatsPerFlight * dailyFrequency;
-
-      // Unconstrained demand is capacity * LF * 1.1 to show optimization potential
-      const unconstrainedDemand = Math.round(dailyCapacity * loadFactor * 1.1);
-      const dailyDemand = unconstrainedDemand;
-
       const result = await api.optimizeRoute({
         origin,
         destination,
         current_equipment: 'A320neo',
         current_frequency: 2,
         current_fare: avgFare,
-        daily_demand: dailyDemand,
+        daily_demand: Math.round((currentRoute.total_pax || 500) / 365),
       });
 
       // Extract RASM values from API response
@@ -368,7 +357,7 @@ export function OptimizePage() {
                 <div className="text-xs text-slate-500">Est. RASM</div>
                 <div className="text-lg font-semibold text-slate-800">
                   {currentRoute.avg_fare
-                    ? `${(((currentRoute.avg_load_factor || 0.85) * currentRoute.avg_fare / 800) * 100).toFixed(2)}¢`
+                    ? `${((currentRoute.avg_fare / 800) * 100).toFixed(2)}¢`
                     : '-'
                   }
                 </div>
