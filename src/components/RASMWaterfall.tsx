@@ -43,9 +43,9 @@ export function RASMWaterfall({ baseline, optimized, components, showDetails = t
   const [expandedDomains, setExpandedDomains] = useState<Set<string>>(new Set());
 
   const totalDelta = optimized - baseline;
-  // Calculate improvement percentage, capping at realistic maximum
+  // Calculate improvement percentage (values are pre-capped per route in OptimizePage)
   const rawImprovementPct = baseline > 0 ? (totalDelta / baseline) * 100 : 0;
-  const improvementPct = Math.min(rawImprovementPct, 47.3).toFixed(1);
+  const improvementPct = rawImprovementPct.toFixed(1);
 
   const toggleDomain = (domain: string) => {
     const newExpanded = new Set(expandedDomains);
