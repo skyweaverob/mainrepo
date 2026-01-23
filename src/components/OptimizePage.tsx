@@ -112,13 +112,27 @@ export function OptimizePage() {
       const [origin, destination] = selectedRoute.split('-');
       const avgFare = currentRoute.avg_fare || 140;
 
+      // Calculate daily demand based on load factor and capacity
+      // If we have load factor, use it to estimate proper demand (unconstrained)
+      // Otherwise fall back to annual pax / 365
+      const loadFactor = currentRoute.avg_load_factor || 0.85;
+      const seatsPerFlight = 182; // A320neo
+      const dailyFrequency = 2;
+      const dailyCapacity = seatsPerFlight * dailyFrequency;
+
+      // Use the higher of: capacity-based demand (at load factor) or annual pax / 365
+      // This ensures we don't underestimate demand for routes with good load factors
+      const capacityBasedDemand = Math.round(dailyCapacity * loadFactor);
+      const annualBasedDemand = Math.round((currentRoute.total_pax || 500) / 365);
+      const dailyDemand = Math.max(capacityBasedDemand, annualBasedDemand);
+
       const result = await api.optimizeRoute({
         origin,
         destination,
         current_equipment: 'A320neo',
         current_frequency: 2,
         current_fare: avgFare,
-        daily_demand: Math.round((currentRoute.total_pax || 500) / 365),
+        daily_demand: dailyDemand,
       });
 
       // Extract RASM values from API response
@@ -128,7 +142,9 @@ export function OptimizePage() {
       const currentRasm = currentOption?.rasm_cents || (avgFare / 800) * 100;
       const optimizedRasm = recommendedOption?.rasm_cents || currentRasm * 1.08;
       const totalDelta = optimizedRasm - currentRasm;
-      const improvementPct = ((optimizedRasm - currentRasm) / currentRasm) * 100;
+      // Cap improvement percentage at 50% - values higher than this indicate data issues
+      const rawImprovementPct = currentRasm > 0 ? ((optimizedRasm - currentRasm) / currentRasm) * 100 : 0;
+      const improvementPct = Math.min(rawImprovementPct, 50);
 
       // Distribute improvement across domains based on API data
       const networkDelta = totalDelta * 0.45;
@@ -355,7 +371,7 @@ export function OptimizePage() {
                 <div className="text-xs text-slate-500">Est. RASM</div>
                 <div className="text-lg font-semibold text-slate-800">
                   {currentRoute.avg_fare
-                    ? `${((currentRoute.avg_fare / 800) * 100).toFixed(2)}¢`
+                    ? `${(((currentRoute.avg_load_factor || 0.85) * currentRoute.avg_fare / 800) * 100).toFixed(2)}¢`
                     : '-'
                   }
                 </div>

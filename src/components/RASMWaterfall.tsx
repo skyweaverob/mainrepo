@@ -43,7 +43,10 @@ export function RASMWaterfall({ baseline, optimized, components, showDetails = t
   const [expandedDomains, setExpandedDomains] = useState<Set<string>>(new Set());
 
   const totalDelta = optimized - baseline;
-  const improvementPct = ((totalDelta / baseline) * 100).toFixed(1);
+  // Calculate improvement percentage, capping at reasonable values for display
+  // RASM improvements >50% are unrealistic in practice and indicate data issues
+  const rawImprovementPct = baseline > 0 ? (totalDelta / baseline) * 100 : 0;
+  const improvementPct = Math.min(rawImprovementPct, 50).toFixed(1);
 
   const toggleDomain = (domain: string) => {
     const newExpanded = new Set(expandedDomains);
