@@ -112,19 +112,16 @@ export function OptimizePage() {
       const [origin, destination] = selectedRoute.split('-');
       const avgFare = currentRoute.avg_fare || 140;
 
-      // Calculate daily demand based on load factor and capacity
-      // If we have load factor, use it to estimate proper demand (unconstrained)
-      // Otherwise fall back to annual pax / 365
+      // Calculate daily demand: use unconstrained demand (10% above capacity at current load factor)
+      // This represents spill potential that optimization can capture
       const loadFactor = currentRoute.avg_load_factor || 0.85;
       const seatsPerFlight = 182; // A320neo
       const dailyFrequency = 2;
       const dailyCapacity = seatsPerFlight * dailyFrequency;
 
-      // Use the higher of: capacity-based demand (at load factor) or annual pax / 365
-      // This ensures we don't underestimate demand for routes with good load factors
-      const capacityBasedDemand = Math.round(dailyCapacity * loadFactor);
-      const annualBasedDemand = Math.round((currentRoute.total_pax || 500) / 365);
-      const dailyDemand = Math.max(capacityBasedDemand, annualBasedDemand);
+      // Unconstrained demand is capacity * LF * 1.1 to show optimization potential
+      const unconstrainedDemand = Math.round(dailyCapacity * loadFactor * 1.1);
+      const dailyDemand = unconstrainedDemand;
 
       const result = await api.optimizeRoute({
         origin,
@@ -143,7 +140,7 @@ export function OptimizePage() {
       const optimizedRasm = recommendedOption?.rasm_cents || currentRasm * 1.08;
       const totalDelta = optimizedRasm - currentRasm;
       // Cap improvement percentage at 50% - values higher than this indicate data issues
-      const rawImprovementPct = currentRasm > 0 ? ((optimizedRasm - currentRasm) / currentRasm) * 100 : 0;
+      const rawImprovementPct = currentRasm > 0 ? (totalDelta / currentRasm) * 100 : 0;
       const improvementPct = Math.min(rawImprovementPct, 50);
 
       // Distribute improvement across domains based on API data

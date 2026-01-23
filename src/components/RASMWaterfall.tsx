@@ -167,7 +167,7 @@ export function RASMWaterfall({ baseline, optimized, components, showDetails = t
                       +{component.delta.toFixed(2)}¢
                     </div>
                     <div className="text-sm text-slate-500">
-                      {((component.delta / totalDelta) * 100).toFixed(0)}% of improvement
+                      {totalDelta > 0 ? ((component.delta / totalDelta) * 100).toFixed(0) : 0}% of improvement
                     </div>
                   </div>
 
